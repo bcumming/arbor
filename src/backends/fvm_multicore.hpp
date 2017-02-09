@@ -1,4 +1,6 @@
+#pragma once
 
+#include <fstream>
 #include <map>
 #include <string>
 
@@ -6,6 +8,8 @@
 #include <mechanism.hpp>
 #include <memory/memory.hpp>
 #include <util/span.hpp>
+
+#include <json/json.hpp>
 
 namespace nest {
 namespace mc {
@@ -73,6 +77,19 @@ struct backend {
         // the invariant part of the matrix diagonal
         array invariant_d;              // [μS]
 
+        void print_to_file(std::string fname) {
+            nlohmann::json as_json;
+            as_json["size"] = d.size();
+            as_json["d"] = d;
+            as_json["u"] = u;
+            as_json["p"] = p;
+            as_json["rhs"] = rhs;
+            as_json["voltage"] = voltage;
+
+            auto fid = std::ofstream(fname);
+            fid << as_json;
+        }
+
         matrix_assembler() = default;
 
         matrix_assembler(
@@ -88,6 +105,8 @@ struct backend {
         {
             auto n = d.size();
             invariant_d = array(n, 0);
+            // set the first value in u to zero, though this value is never used
+            u[0] = 0;
             for (auto i: util::make_span(1u, n)) {
                 auto gij = face_conductance[i];
 

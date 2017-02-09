@@ -183,6 +183,9 @@ public:
     std::size_t num_probes() const { return probes_.size(); }
 
 private:
+    /// the number of timesteps taken
+    unsigned steps_ = 0;
+
     /// current time [ms]
     value_type t_ = value_type{0};
 
@@ -756,6 +759,9 @@ void fvm_multicell<Backend>::advance(double dt) {
     PE("matrix", "setup");
     matrix_assembler_.assemble(dt);
 
+    if (!(steps_%100)) {
+        matrix_assembler_.print_to_file("matrix_"+std::to_string(steps_)+".json");
+    }
     PL(); PE("solve");
     matrix_.solve();
     PL();
@@ -772,6 +778,7 @@ void fvm_multicell<Backend>::advance(double dt) {
     PL();
 
     t_ += dt;
+    steps_++;
 }
 
 } // namespace fvm

@@ -433,9 +433,8 @@ void profiler_output(double threshold, std::size_t num_local_work_items) {
     as_json["rank"] = comm_rank;
     as_json["regions"] = p.as_json();
 
-    auto fname = std::string("profile_" + std::to_string(comm_rank));
-    std::ofstream fid(fname);
-    fid << std::setw(1) << as_json;
+    std::ofstream("profile_"+std::to_string(comm_rank)+".json")
+        << std::setw(1) << as_json;
 }
 
 #else

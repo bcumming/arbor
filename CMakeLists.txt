@@ -195,4 +195,5 @@ add_subdirectory(mechanisms)
 add_subdirectory(src)
 add_subdirectory(tests)
 add_subdirectory(miniapp)
+add_subdirectory(cg)
 

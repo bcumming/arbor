@@ -1,0 +1,72 @@
+Preconditioned CG from Saad:
+
+1. Compute r0 := b − Ax0, z0 = M−1r0, and p0 := z0
+2. For j = 0, 1, . . ., until convergence Do:
+3. αj := (rj, zj)/(Apj, pj)
+4. xj+1 := xj + αjpj
+5. rj+1 := rj − αjApj
+6. zj+1 := M−1rj+1
+7. βj := (rj+1, zj+1)/(rj, zj)
+8. pj+1 := zj+1 + βjpj
+9. EndDo
+
+------------------------------------------
+
+rewritten closer to implementation:
+
+r_0 = b - A*x_0
+z_0 = inv(M)*r_0
+p_0 = z_0
+tau_0 = <r_0, z_0>
+
+for j=0.. until convergence
+    w_j = A*p_j
+    alpha_j = tau_j  / <w_j, p_j>
+    x_{j+1} = x_j + alpha_j*p_j
+    r_{j+1} = r_j - alpha_j*w_j
+    z_{j+1} = inv(M)*r_{j+1}
+    tau_{j+1} = <r_{j+1}, z_{j+1}>
+    beta_j = tau_{j+1} / tau_j
+    p_{j+1} = z_{j+1} + beta_{j}*p_j
+end
+
+------------------------------------------
+... next step: remove indexes where possible (overwrite old values of vectors/scalars)
+
+r = b - A*x
+z = inv(M)*r
+p = z
+tau_0 = dot(r, z)
+
+for j=0.. until convergence
+    w = A*p
+    α = tau_j  / dot(w, p)
+    x = x + α*p
+    r = r - α*w
+    z = inv(M)*r
+    tau_{j+1} = dot(r, z)
+    β = tau_{j+1} / tau_j
+    p = z + β*p
+end
+
+------------------------------------------
+
+... then use two variables to keep track of the tau_j variables
+
+r = b - A*x
+z = inv(M)*r
+p = z
+tau = dot(r, z)
+
+for j=0.. until convergence
+    w = A*p
+    α = tau / dot(w, p)
+    x = x + α*p
+    r = r - α*w
+    z = inv(M)*r
+    tau_new = dot(r, z)
+    β = tau_new / tau
+    p = z + β*p
+
+    tau = tau_new;
+end
