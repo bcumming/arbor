@@ -52,7 +52,7 @@ std::string emit_cuda_cpp_source(const Module& module_, const std::string& ns) {
     std::string name = module_.module_name();
     std::string class_name = make_class_name(name);
     std::string ppack_name = make_ppack_name(name);
-    std::vector<std::string> ns_components = namespace_components(ns);
+    auto ns_components = namespace_components(ns);
 
     NetReceiveExpression* net_receive = find_net_receive(module_);
 
@@ -198,7 +198,7 @@ std::string emit_cuda_cu_source(const Module& module_, const std::string& ns) {
     std::string name = module_.module_name();
     std::string class_name = make_class_name(name);
     std::string ppack_name = make_ppack_name(name);
-    std::vector<std::string> ns_components = namespace_components(ns);
+    auto ns_components = namespace_components(ns);
     const bool is_point_proc = module_.kind() == moduleKind::point;
 
     NetReceiveExpression* net_receive = find_net_receive(module_);

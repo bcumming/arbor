@@ -58,7 +58,7 @@ std::string build_info_header(const Module& m, const std::string& qual_namespace
 
     std::string name = m.module_name();
     auto ids = public_variable_ids(m);
-    std::vector<std::string> ns_components = namespace_components(qual_namespace);
+    auto ns_components = namespace_components(qual_namespace);
 
     io::pfxstringstream out;
 
