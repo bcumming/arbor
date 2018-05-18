@@ -28,10 +28,12 @@ set(arbor_cxx_sources
     schedule.cpp
     swcio.cpp
     threading/threading.cpp
+    threading/hpx.cpp
     util/debug.cpp
     util/hostname.cpp
     util/path.cpp
     util/unwind.cpp
+    thread_private_spike_store.cpp
 )
 
 if(ARB_WITH_CUDA)

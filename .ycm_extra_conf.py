@@ -56,7 +56,9 @@ flags = [
     'tests/ubench/google-benchmark/include',
     '-I',
     '/cm/shared/apps/cuda/8.0.44/include',
-    '-DARB_HAVE_GPU'
+    '-DARB_HAVE_GPU',
+    '-I',
+    '/home/bcumming/software/github/hpx'
 ]
 
 # Set this to the absolute path to the folder (NOT the file!) containing the

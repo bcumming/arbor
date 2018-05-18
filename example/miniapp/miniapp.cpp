@@ -21,6 +21,7 @@
 #include <sampling.hpp>
 #include <schedule.hpp>
 #include <threading/threading.hpp>
+#include <threading/hpx.hpp>
 #include <util/any.hpp>
 #include <util/config.hpp>
 #include <util/debug.hpp>
@@ -48,6 +49,8 @@ void report_compartment_stats(const recipe&);
 
 int main(int argc, char** argv) {
     communication::global_policy_guard global_guard(argc, argv);
+
+    arb::hpx_guard guard(argc, argv);
 
     try {
         util::meter_manager meters;

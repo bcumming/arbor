@@ -19,6 +19,8 @@ if (NOT CMAKE_BUILD_TYPE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "debug" "release")
 endif()
 
+find_package(HPX REQUIRED)
+
 # compilation flags
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include("CompilerOptions")
@@ -62,7 +64,10 @@ set(EXTERNAL_INCLUDES "")
 #----------------------------------------------------------
 # list of libraries built inside Arbor
 #----------------------------------------------------------
-set(ARB_LIBRARIES "")
+#set(ARB_LIBRARIES "")
+set(ARB_LIBRARIES ${HPX_LIBRARIES})
+include_directories(${HPX_INCLUDE_DIRS})
+
 
 #----------------------------------------------------------
 # Threading model selection

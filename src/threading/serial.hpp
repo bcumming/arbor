@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -90,8 +91,11 @@ inline std::string description() {
 
 constexpr bool multithreaded() { return false; }
 
-inline std::size_t thread_id() {
-    return 0;
+inline
+std::size_t thread_id() {
+    static std::atomic<std::size_t> num_threads(0);
+    thread_local std::size_t thread_id = num_threads++;
+    return thread_id;
 }
 
 /// Proxy for tbb task group.

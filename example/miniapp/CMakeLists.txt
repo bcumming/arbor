@@ -22,3 +22,13 @@ set_target_properties(
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/example"
 )
 
+add_executable(hpx.exe test.cpp)
+
+target_link_libraries(hpx.exe LINK_PUBLIC ${ARB_LIBRARIES})
+
+set_target_properties(
+    hpx.exe
+    PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+

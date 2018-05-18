@@ -1,12 +1,81 @@
 #pragma once
 
+#include <iostream>
 #include <vector>
+#include <mutex>
 
 #include <common_types.hpp>
 #include <spike.hpp>
 #include <threading/threading.hpp>
 
 namespace arb {
+
+namespace impl {
+    template <typename T>
+    struct iterable_store {
+        using size_type = std::size_t;
+
+        using store_type = std::unordered_map<size_type, T>;
+        using store_iterator = typename store_type::iterator;
+        using const_store_iterator = typename store_type::const_iterator;
+
+        struct iterator: public store_iterator {
+            using base = store_iterator;
+            iterator(): base() {}
+            iterator(store_iterator it): base(it) {}
+
+            T* operator->() {
+                return static_cast<T*>(&(store_iterator::operator->()->second));
+            }
+            T& operator*(){
+                return store_iterator::operator*().second;
+            }
+        };
+
+        struct const_iterator: public const_store_iterator {
+            using base = const_store_iterator;
+            const_iterator(): base() {}
+            const_iterator(base it): base(it) {}
+            const_iterator(store_iterator it): base(it) {}
+
+            const T* operator->() {
+                return static_cast<const T*>(&(const_store_iterator::operator->()->second));
+            }
+            const T& operator*(){
+                return const_store_iterator::operator*().second;
+            }
+        };
+
+        std::unordered_map<size_type, T> store_;
+
+        T& get() {
+            std::lock_guard<std::mutex> g(mtx);
+            const auto id = arb::threading::thread_id();
+            return store_[id];
+        }
+
+        size_type size() const {
+            return store_.size();
+        }
+
+        iterator begin() {
+            return store_.begin();
+        }
+        iterator end() {
+            return store_.end();
+        }
+
+        const_iterator begin() const {
+            return store_.begin();
+        }
+        const_iterator end() const {
+            return store_.end();
+        }
+
+        std::mutex mtx;
+    };
+} // namespace impl
+
 
 /// Handles the complexity of managing thread private buffers of spikes.
 /// Internally stores one thread private buffer of spikes for each hardware thread.
@@ -15,47 +84,9 @@ namespace arb {
 /// The insert() and gather() methods add a vector of spikes to the buffer,
 /// and collate all of the buffers into a single vector respectively.
 class thread_private_spike_store {
-public :
-    /// Collate all of the individual buffers into a single vector of spikes.
-    /// Does not modify the buffer contents.
-    std::vector<spike> gather() const {
-        std::vector<spike> spikes;
-        unsigned num_spikes = 0u;
-        for (auto& b : buffers_) {
-            num_spikes += b.size();
-        }
-        spikes.reserve(num_spikes);
-
-        for (auto& b : buffers_) {
-            spikes.insert(spikes.begin(), b.begin(), b.end());
-        }
-
-        return spikes;
-    }
-
-    /// Return a reference to the thread private buffer of the calling thread
-    std::vector<spike>& get() {
-        return buffers_.local();
-    }
-
-    /// Clear all of the thread private buffers
-    void clear() {
-        for (auto& b : buffers_) {
-            b.clear();
-        }
-    }
-
-    /// Append the passed spikes to the end of the thread private buffer of the
-    /// calling thread
-    void insert(const std::vector<spike>& spikes) {
-        auto& buff = get();
-        buff.insert(buff.end(), spikes.begin(), spikes.end());
-    }
-
 private :
     /// thread private storage for accumulating spikes
-    using local_spike_store_type =
-        threading::enumerable_thread_specific<std::vector<spike>>;
+    using local_spike_store_type = impl::iterable_store<std::vector<spike>>;
 
     local_spike_store_type buffers_;
 
@@ -63,13 +94,21 @@ public :
     using iterator = typename local_spike_store_type::iterator;
     using const_iterator = typename local_spike_store_type::const_iterator;
 
-    // make the container iterable
-    // we iterate of threads, not individual containers
+    /// Collate all of the individual buffers into a single vector of spikes.
+    /// Does not modify the buffer contents.
+    std::vector<spike> gather() const;
 
-    iterator begin() { return buffers_.begin(); }
-    iterator end() { return buffers_.begin(); }
-    const_iterator begin() const { return buffers_.begin(); }
-    const_iterator end() const { return buffers_.begin(); }
+    /// Clear all of the thread private buffers
+    void clear();
+
+    /// Append the passed spikes to the end of the thread private buffer of the
+    /// calling thread
+    void insert(const std::vector<spike>& spikes);
+
+    iterator begin();
+    iterator end();
+    const_iterator begin() const;
+    const_iterator end() const;
 };
 
 } // namespace arb
