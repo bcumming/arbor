@@ -20,12 +20,13 @@ namespace arb {
 // due for delivery at tfinal_i are not delivered until epoch_i+1.
 
 struct epoch {
-    std::size_t id=0;
+    using index_type = std::int64_t;
+    index_type id=0;
     time_type tfinal=0;
 
     epoch() = default;
 
-    epoch(std::size_t id, time_type tfinal): id(id), tfinal(tfinal) {}
+    epoch(index_type id, time_type tfinal): id(id), tfinal(tfinal) {}
 
     void advance(time_type t) {
         EXPECTS(t>=tfinal);

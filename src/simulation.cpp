@@ -22,7 +22,9 @@
 namespace arb {
 
 simulation::simulation(const recipe& rec, const domain_decomposition& decomp):
-    communicator_(rec, decomp)
+    communicator_(rec, decomp),
+    local_spikes_(decomp.groups.size()),
+    event_lanes_(communicator_.num_local_cells())
 {
     hpx::resume();
     hpx::apply([&]() {
@@ -65,12 +67,6 @@ simulation::simulation(const recipe& rec, const domain_decomposition& decomp):
             [&](cell_gid_type i) {
                 cell_groups_[i] = cell_group_factory(rec, decomp.groups[i]);
             });
-
-        // Create event lane buffers.
-        // There is one set for each epoch: current (0) and next (1).
-        // For each epoch there is one lane for each cell in the cell group.
-        event_lanes_[0].resize(num_local_cells);
-        event_lanes_[1].resize(num_local_cells);
     });
     hpx::suspend();
 }
@@ -104,8 +100,11 @@ void simulation::reset() {
 
     communicator_.reset();
 
-    current_spikes().clear();
-    previous_spikes().clear();
+    for (auto& lanes: local_spikes_) {
+        for (auto& lane: lanes) {
+            lane.clear();
+        }
+    }
 }
 
 time_type simulation::run(time_type tfinal, time_type dt) {
@@ -118,22 +117,29 @@ time_type simulation::run(time_type tfinal, time_type dt) {
         // to overlap communication and computation.
         const time_type t_interval = min_delay_/2;
 
+        auto update_cell =
+            [&] (unsigned i) {
+                auto &group = cell_groups_[i];
+
+                auto queues = util::subrange_view(
+                    event_lanes_[epoch_],
+                    communicator_.group_queue_range(i));
+                group->advance(epoch_, dt, queues);
+                PE(advance_spikes);
+
+                auto& spikes = group->spikes();
+                auto& buffer = local_spikes_[epoch_][i];
+                buffer.clear();
+                buffer.insert(buffer.end(), spikes.begin(), spikes.end());
+
+                group->clear_spikes();
+                PL();
+             };
+
         // task that updates cell state in parallel.
         auto update_cells = [&] () {
             hpx::parallel::for_loop(hpx::parallel::execution::par,
-                0u, cell_groups_.size(),
-                [&](unsigned i) {
-                    auto &group = cell_groups_[i];
-
-                    auto queues = util::subrange_view(
-                        event_lanes(epoch_.id),
-                        communicator_.group_queue_range(i));
-                    group->advance(epoch_, dt, queues);
-                    PE(advance_spikes);
-                    current_spikes().insert(group->spikes());
-                    group->clear_spikes();
-                    PL();
-                });
+                0u, cell_groups_.size(), update_cell);
         };
 
         // task that performs spike exchange with the spikes generated in
@@ -142,8 +148,20 @@ time_type simulation::run(time_type tfinal, time_type dt) {
         // integration period at the latest.
         auto exchange = [&] () {
             PE(communication_exchange_gatherlocal);
-            auto local_spikes = previous_spikes().gather();
+
+            /*******************************/
+            std::size_t nlocal_spikes = 0;
+            for (auto& l: local_spikes_[epoch_.id-1]) {
+                nlocal_spikes += l.size();
+            }
+            std::vector<spike> local_spikes;
+            local_spikes.reserve(nlocal_spikes);
+            for (const auto& l: local_spikes_[epoch_.id-1]) {
+                local_spikes.insert(local_spikes.end(), l.begin(), l.end());
+            }
+            /*******************************/
             PL();
+
             auto global_spikes = communicator_.exchange(local_spikes);
 
             PE(communication_spikeio);
@@ -164,18 +182,8 @@ time_type simulation::run(time_type tfinal, time_type dt) {
         epoch_ = epoch(0, tuntil);
         setup_events(t_, tuntil, 1);
         while (t_<tfinal) {
-            local_spikes_.exchange();
-
-            // empty the spike buffers for the current integration period.
-            // these buffers will store the new spikes generated in update_cells.
-            current_spikes().clear();
-
             // run the tasks, overlapping if the threading model and number of
             // available threads permits it.
-            //threading::task_group g;
-            //g.run(exchange);
-            //g.run(update_cells);
-            //g.wait();
             auto fe = hpx::async(exchange);
             auto fu = hpx::async(update_cells);
 
@@ -189,7 +197,6 @@ time_type simulation::run(time_type tfinal, time_type dt) {
         }
 
         // Run the exchange one last time to ensure that all spikes are output to file.
-        local_spikes_.exchange();
         exchange();
     });
     hpx::suspend();
@@ -211,10 +218,10 @@ void simulation::setup_events(time_type t_from, time_type t_to, std::size_t epoc
         [&](cell_size_type i) {
             merge_events(
                 t_from, t_to,
-                event_lanes(epoch)[i],      // in:  the current event lane
+                event_lanes_[epoch][i],     // in:  the current event lane
                 pending_events_[i],         // in:  events from the communicator
                 event_generators_[i],       // in:  event generators for this lane
-                event_lanes(epoch+1)[i]);   // out: the event lane for the next epoch
+                event_lanes_[epoch+1][i]);  // out: the event lane for the next epoch
             pending_events_[i].clear();
         });
 }
@@ -259,10 +266,6 @@ std::size_t simulation::num_spikes() const {
 
 std::size_t simulation::num_groups() const {
     return cell_groups_.size();
-}
-
-std::vector<pse_vector>& simulation::event_lanes(std::size_t epoch_id) {
-    return event_lanes_[epoch_id%2];
 }
 
 void simulation::set_binning_policy(binning_kind policy, time_type bin_interval) {

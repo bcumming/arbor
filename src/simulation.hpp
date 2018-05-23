@@ -11,6 +11,7 @@
 #include <communication/global_policy.hpp>
 #include <domain_decomposition.hpp>
 #include <epoch.hpp>
+#include <epoch_buffer.hpp>
 #include <recipe.hpp>
 #include <sampling.hpp>
 #include <thread_private_spike_store.hpp>
@@ -60,11 +61,10 @@ public:
     void inject_events(const pse_vector& events);
 
 private:
+
     // Private helper function that sets up the event lanes for an epoch.
     // See comments on implementation for more information.
     void setup_events(time_type t_from, time_type time_to, std::size_t epoch_id);
-
-    std::vector<pse_vector>& event_lanes(std::size_t epoch_id);
 
     std::size_t num_groups() const;
 
@@ -78,9 +78,6 @@ private:
     // one set of event_generators for each local cell
     std::vector<std::vector<event_generator>> event_generators_;
 
-    using local_spike_store_type = thread_private_spike_store;
-    util::double_buffer<local_spike_store_type> local_spikes_;
-
     spike_export_function global_export_callback_ = util::nop_function;
     spike_export_function local_export_callback_ = util::nop_function;
 
@@ -91,23 +88,12 @@ private:
 
     communicator_type communicator_;
 
-    // Convenience functions that map the spike buffers onto the appropriate
-    // integration interval.
-    //
-    // To overlap communication and computation, integration intervals of
-    // size Delta/2 are used, where Delta is the minimum delay in the global
-    // system.
-    // From the frame of reference of the current integration period we
-    // define three intervals: previous, current and future
-    // Then we define the following :
-    //      current_spikes : spikes generated in the current interval
-    //      previous_spikes: spikes generated in the preceding interval
-
-    local_spike_store_type& current_spikes()  { return local_spikes_.get(); }
-    local_spike_store_type& previous_spikes() { return local_spikes_.other(); }
+    // Spikes generated on local cell groups
+    epoch_vector<std::vector<spike>> local_spikes_;
 
     // Pending events to be delivered.
-    std::array<std::vector<pse_vector>, 2> event_lanes_;
+    epoch_vector<pse_vector> event_lanes_;
+
     std::vector<pse_vector> pending_events_;
 
     // Sampler associations handles are managed by a helper class.

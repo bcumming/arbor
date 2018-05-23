@@ -40,3 +40,8 @@ hpx_guard::~hpx_guard() {
 }
 
 } // namespace arb
+
+//-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address -DCMAKE_STATIC_LINKER_FLAGS=-fsanitize=address
+//-DHPX_WITH_STACKTRACES=off
+//-DHPX_WITH_SANITIZERS=ON -DHPX_WITH_STACKOVERFLOW_DETECTION=OFF -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" -DHPX_WITH_CXX11=on -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -DHPX_WITH_STACKTRACES=off
+
