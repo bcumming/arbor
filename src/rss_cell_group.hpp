@@ -41,7 +41,7 @@ public:
         PE(advance_dss);
         for (auto& cell: cells_) {
 
-            auto t_end = std::min(cell.stop_time, ep.tfinal);
+            auto t_end = std::min(cell.stop_time, ep.t1());
             auto t = cell.start_time + cell.step*cell.period;
 
             while (t < t_end) {

@@ -26,7 +26,7 @@ void lif_cell_group::advance(epoch ep, time_type dt, const event_lane_subrange& 
     if (event_lanes.size() > 0) {
         for (auto lid: util::make_span(0, gids_.size())) {
             // Advance each cell independently.
-            advance_cell(ep.tfinal, dt, lid, event_lanes[lid]);
+            advance_cell(ep.t1(), dt, lid, event_lanes[lid]);
         }
     }
     PL();

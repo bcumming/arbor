@@ -15,6 +15,7 @@
 
 
 #include <hpx/include/apply.hpp>
+#include <hpx/lcos/wait_all.hpp>
 #include <hpx/hpx_start.hpp>
 #include <hpx/hpx_suspend.hpp>
 #include <hpx/include/parallel_for_loop.hpp>
@@ -24,7 +25,8 @@ namespace arb {
 simulation::simulation(const recipe& rec, const domain_decomposition& decomp):
     communicator_(rec, decomp),
     local_spikes_(decomp.groups.size()),
-    event_lanes_(communicator_.num_local_cells())
+    event_lanes_(communicator_.num_local_cells()),
+    cell_task_counter_(decomp.groups.size())
 {
     hpx::resume();
     hpx::apply([&]() {
@@ -107,7 +109,7 @@ void simulation::reset() {
     }
 }
 
-time_type simulation::run(time_type tfinal, time_type dt) {
+time_type simulation::run(time_type t_final, time_type dt) {
     hpx::resume();
     hpx::apply([&]() {
         // Calculate the size of the largest possible time integration interval
@@ -118,86 +120,111 @@ time_type simulation::run(time_type tfinal, time_type dt) {
         const time_type t_interval = min_delay_/2;
 
         auto update_cell =
-            [&] (unsigned i) {
+            [&] (unsigned i, epoch ep) {
                 auto &group = cell_groups_[i];
 
                 auto queues = util::subrange_view(
-                    event_lanes_[epoch_],
+                    event_lanes_[ep],
                     communicator_.group_queue_range(i));
-                group->advance(epoch_, dt, queues);
+                group->advance(ep, dt, queues);
                 PE(advance_spikes);
 
                 auto& spikes = group->spikes();
-                auto& buffer = local_spikes_[epoch_][i];
+                auto& buffer = local_spikes_[ep][i];
                 buffer.clear();
                 buffer.insert(buffer.end(), spikes.begin(), spikes.end());
 
                 group->clear_spikes();
                 PL();
+
+                // HERE: update cell_task_counter_ and launch if needed
              };
 
+        auto merge_lane =
+            [&](unsigned i, epoch ep) {
+                merge_events(
+                    ep.t0(), ep.t1(),
+                    event_lanes_[ep.id-1][i],   // in:  the current event lane
+                    pending_events_[i],         // in:  events from the communicator
+                    event_generators_[i],       // in:  event generators for this lane
+                    event_lanes_[ep.id][i]);    // out: the event lane for the next epoch
+                pending_events_[i].clear();
+            };
+
+        auto merge_lanes =
+            [&](epoch ep) {
+                const unsigned n = communicator_.num_local_cells();
+                std::vector<hpx::future<void>> f;
+                f.reserve(n);
+                for (unsigned i=0; i<n; ++i) {
+                    f.push_back(hpx::async(merge_lane, i, ep));
+                }
+                hpx::wait_all(f.begin(), f.end());
+            };
+
         // task that updates cell state in parallel.
-        auto update_cells = [&] () {
-            hpx::parallel::for_loop(hpx::parallel::execution::par,
-                0u, cell_groups_.size(), update_cell);
-        };
+        auto update_cells =
+            [&] (epoch ep) {
+                const unsigned n = cell_groups_.size();
+                std::vector<hpx::future<void>> f;
+                f.reserve(n);
+                for (unsigned i=0; i<n; ++i) {
+                    f.push_back(hpx::async(update_cell, i, ep));
+                }
+                hpx::wait_all(f.begin(), f.end());
+            };
 
         // task that performs spike exchange with the spikes generated in
         // the previous integration period, generating the postsynaptic
         // events that must be delivered at the start of the next
         // integration period at the latest.
-        auto exchange = [&] () {
-            PE(communication_exchange_gatherlocal);
+        auto exchange =
+            [&] (epoch ep) {
+                PE(communication_exchange_gatherlocal);
 
-            /*******************************/
-            std::size_t nlocal_spikes = 0;
-            for (auto& l: local_spikes_[epoch_.id-1]) {
-                nlocal_spikes += l.size();
-            }
-            std::vector<spike> local_spikes;
-            local_spikes.reserve(nlocal_spikes);
-            for (const auto& l: local_spikes_[epoch_.id-1]) {
-                local_spikes.insert(local_spikes.end(), l.begin(), l.end());
-            }
-            /*******************************/
-            PL();
+                /*******************************/
+                std::size_t nlocal_spikes = 0;
+                for (auto& l: local_spikes_[ep.id-1]) {
+                    nlocal_spikes += l.size();
+                }
+                std::vector<spike> local_spikes;
+                local_spikes.reserve(nlocal_spikes);
+                for (const auto& l: local_spikes_[ep.id-1]) {
+                    local_spikes.insert(local_spikes.end(), l.begin(), l.end());
+                }
+                /*******************************/
+                PL();
 
-            auto global_spikes = communicator_.exchange(local_spikes);
+                auto global_spikes = communicator_.exchange(local_spikes);
 
-            PE(communication_spikeio);
-            local_export_callback_(local_spikes);
-            global_export_callback_(global_spikes.values());
-            PL();
+                PE(communication_spikeio);
+                local_export_callback_(local_spikes);
+                global_export_callback_(global_spikes.values());
+                PL();
 
-            PE(communication_walkspikes);
-            communicator_.make_event_queues(global_spikes, pending_events_);
-            PL();
+                PE(communication_walkspikes);
+                communicator_.make_event_queues(global_spikes, pending_events_);
+                PL();
 
-            const auto t0 = epoch_.tfinal;
-            const auto t1 = std::min(tfinal, t0+t_interval);
-            setup_events(t0, t1, epoch_.id);
-        };
+                merge_lanes(ep+1);
+            };
 
-        time_type tuntil = std::min(t_+t_interval, tfinal);
-        epoch_ = epoch(0, tuntil);
-        setup_events(t_, tuntil, 1);
-        while (t_<tfinal) {
+        epoch_ = epoch(0, t_, t_interval, t_final);
+        merge_lanes(epoch_);
+        while (!epoch_.finished()) {
             // run the tasks, overlapping if the threading model and number of
             // available threads permits it.
-            auto fe = hpx::async(exchange);
-            auto fu = hpx::async(update_cells);
+            auto fe = hpx::async(exchange, epoch_);
+            auto fu = hpx::async(update_cells, epoch_);
 
             fe.get();
             fu.get();
 
-            t_ = tuntil;
-
-            tuntil = std::min(t_+t_interval, tfinal);
-            epoch_.advance(tuntil);
+            ++epoch_;
         }
 
         // Run the exchange one last time to ensure that all spikes are output to file.
-        exchange();
+        exchange(epoch_);
     });
     hpx::suspend();
 
@@ -212,19 +239,7 @@ time_type simulation::run(time_type tfinal, time_type dt) {
 //      event_lanes[epoch]: take all events ≥ t_from
 //      event_generators  : take all events < t_to
 //      pending_events    : take all events
-void simulation::setup_events(time_type t_from, time_type t_to, std::size_t epoch) {
-    const auto n = communicator_.num_local_cells();
-    hpx::parallel::for_loop(hpx::parallel::execution::par, 0, n,
-        [&](cell_size_type i) {
-            merge_events(
-                t_from, t_to,
-                event_lanes_[epoch][i],     // in:  the current event lane
-                pending_events_[i],         // in:  events from the communicator
-                event_generators_[i],       // in:  event generators for this lane
-                event_lanes_[epoch+1][i]);  // out: the event lane for the next epoch
-            pending_events_[i].clear();
-        });
-}
+//void simulation::setup_events(time_type t_from, time_type t_to, std::size_t epoch) {
 
 sampler_association_handle simulation::add_sampler(
         cell_member_predicate probe_ids,

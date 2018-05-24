@@ -9,29 +9,70 @@ namespace arb {
 
 // Information about a current time integration epoch.
 // Each epoch has an integral id, that is incremented for successive epochs.
-// Time is divided as follows, where tfinal_i is tfinal for epoch i:
+// An epoch describes the half open time interval:
 //
-// epoch_0 :             t < tfinal_0
-// epoch_1 : tfinal_0 <= t < tfinal_1
-// epoch_2 : tfinal_1 <= t < tfinal_2
-// epoch_3 : tfinal_2 <= t < tfinal_3
+//      time ∈ [t, min(tupper, t+dt))
 //
-// At the end of epoch_i the solution is at tfinal_i, however events that are
-// due for delivery at tfinal_i are not delivered until epoch_i+1.
+// At the end of an epoch the solution is at min(tupper, t+dt), however events that are
+// due for delivery at tupper_i are not delivered until epoch_i+1.
 
 struct epoch {
     using index_type = std::int64_t;
-    index_type id=0;
-    time_type tfinal=0;
-
+    index_type id;          // integer id of the current epoch
+    time_type t;            // start time of the current epoch
+    time_type tint;         // length of each time interval
+    time_type tupper;       // highest possible value of t
     epoch() = default;
 
-    epoch(index_type id, time_type tfinal): id(id), tfinal(tfinal) {}
+    epoch(index_type id, time_type t, time_type tint, time_type tupper):
+        id(id), t(t), tint(tint), tupper(tupper)
+    {}
 
-    void advance(time_type t) {
-        EXPECTS(t>=tfinal);
-        tfinal = t;
+    epoch(const epoch& other):
+        id(other.id), t(other.t), tint(other.tint), tupper(other.tupper)
+    {}
+
+    epoch& operator=(const epoch& other) {
+        id = other.id;
+        t = other.t;
+        tint = other.tint;
+        tupper = other.tupper;
+        return *this;
+    }
+
+    time_type t0() const {
+        return t;
+    }
+
+    time_type t1() const {
+        return std::min(t+tint, tupper);
+    }
+
+    void advance() {
+        t = t1();
         ++id;
+    }
+
+    epoch& operator++() {
+        advance();
+        return *this;
+    }
+
+    epoch operator++(int) {
+        epoch e = *this;
+        advance();
+        return e;
+    }
+
+    bool finished() const {
+        return t>=tupper;
+    }
+
+    friend epoch operator+(const epoch& ep, index_type n) {
+        EXPECTS(n>=0);
+        epoch e = ep;
+        while (n--) ++e;
+        return e;
     }
 };
 

@@ -64,7 +64,8 @@ private:
 
     // Private helper function that sets up the event lanes for an epoch.
     // See comments on implementation for more information.
-    void setup_events(time_type t_from, time_type time_to, std::size_t epoch_id);
+    //void setup_events(time_type t_from, time_type time_to, std::size_t epoch_id);
+    void setup_events(epoch ep);
 
     std::size_t num_groups() const;
 
@@ -93,6 +94,10 @@ private:
 
     // Pending events to be delivered.
     epoch_vector<pse_vector> event_lanes_;
+
+    // Counters used to determine when tasks are ready to launch
+    epoch_buffer<std::atomic<int>> exchange_task_counter_;
+    epoch_vector<std::atomic<int>> cell_task_counter_;
 
     std::vector<pse_vector> pending_events_;
 

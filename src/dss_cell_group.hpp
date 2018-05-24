@@ -51,10 +51,10 @@ public:
             // The first potential spike_time to emit for this cell
             auto spike_time_it = not_emit_it_[i];
 
-            // Find the first spike past tfinal
+            // Find the first spike past the end of the epoch
             not_emit_it_[i] = std::find_if(
                 spike_time_it, spike_times_[i].end(),
-                [ep](time_type t) {return t >= ep.tfinal; }
+                [ep](time_type t) {return t >= ep.t1(); }
             );
 
             // Loop over the range and create spikes
