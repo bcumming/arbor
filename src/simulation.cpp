@@ -13,7 +13,6 @@
 #include <util/unique_any.hpp>
 #include <profiling/profiler.hpp>
 
-
 #include <hpx/include/apply.hpp>
 #include <hpx/lcos/wait_all.hpp>
 #include <hpx/hpx_start.hpp>
@@ -109,7 +108,74 @@ void simulation::reset() {
     }
 }
 
+epoch simulation::merge_lane(unsigned i, epoch ep) {
+    merge_events(
+        ep.t0(), ep.t1(),
+        event_lanes_[ep.id-1][i],   // in:  the current event lane
+        pending_events_[i],         // in:  events from the communicator
+        event_generators_[i],       // in:  event generators for this lane
+        event_lanes_[ep.id][i]);    // out: the event lane for the next epoch
+    pending_events_[i].clear();
+
+    return ep;
+}
+
+epoch simulation::merge_lanes(epoch ep) {
+    const unsigned n = communicator_.num_local_cells();
+    std::vector<hpx::future<void>> f;
+    f.reserve(n);
+    for (unsigned i=0; i<n; ++i) {
+        f.push_back(hpx::async(&simulation::merge_lane, this, i, ep));
+    }
+    hpx::wait_all(f.begin(), f.end());
+
+    return ep;
+}
+
+epoch simulation::update_cell(unsigned i, epoch ep) {
+    auto &group = cell_groups_[i];
+
+    auto queues = util::subrange_view(
+            event_lanes_[ep],
+            communicator_.group_queue_range(i));
+    group->advance(ep, dt_, queues);
+    PE(advance_spikes);
+
+    auto& spikes = group->spikes();
+    auto& buffer = local_spikes_[ep][i];
+    buffer.clear();
+    buffer.insert(buffer.end(), spikes.begin(), spikes.end());
+
+    group->clear_spikes();
+    PL();
+
+    // HERE: update cell_task_counter_ and launch if needed
+
+    // HERE: decrement exchange_task_counter_
+    auto& c = exchange_task_counter_[ep.id];
+    if (!--c) {
+        // reset atomic counter first, before continuing
+        c = num_groups();
+        // launch spike exchange
+        std::cout << "well, look at that!" << "\n";
+    }
+    return ep;
+}
+
+epoch simulation::launch_cell_update(unsigned i, epoch ep) {
+        auto& counter = cell_task_counter_[ep][i];
+        if (!--counter && !ep.finished()) {
+            counter = 2;
+            //return hpx::async(&simulation::update_cell, this, i, ep+1);
+            hpx::async(&simulation::update_cell, this, i, ep+1);
+        }
+        //return hpx::make_ready_future(ep);
+        return ep;
+}
+
 time_type simulation::run(time_type t_final, time_type dt) {
+    dt_ = dt;
+
     hpx::resume();
     hpx::apply([&]() {
         // Calculate the size of the largest possible time integration interval
@@ -119,60 +185,18 @@ time_type simulation::run(time_type t_final, time_type dt) {
         // to overlap communication and computation.
         const time_type t_interval = min_delay_/2;
 
-        auto update_cell =
-            [&] (unsigned i, epoch ep) {
-                auto &group = cell_groups_[i];
-
-                auto queues = util::subrange_view(
-                    event_lanes_[ep],
-                    communicator_.group_queue_range(i));
-                group->advance(ep, dt, queues);
-                PE(advance_spikes);
-
-                auto& spikes = group->spikes();
-                auto& buffer = local_spikes_[ep][i];
-                buffer.clear();
-                buffer.insert(buffer.end(), spikes.begin(), spikes.end());
-
-                group->clear_spikes();
-                PL();
-
-                // HERE: update cell_task_counter_ and launch if needed
-             };
-
-        auto merge_lane =
-            [&](unsigned i, epoch ep) {
-                merge_events(
-                    ep.t0(), ep.t1(),
-                    event_lanes_[ep.id-1][i],   // in:  the current event lane
-                    pending_events_[i],         // in:  events from the communicator
-                    event_generators_[i],       // in:  event generators for this lane
-                    event_lanes_[ep.id][i]);    // out: the event lane for the next epoch
-                pending_events_[i].clear();
-            };
-
-        auto merge_lanes =
-            [&](epoch ep) {
-                const unsigned n = communicator_.num_local_cells();
-                std::vector<hpx::future<void>> f;
-                f.reserve(n);
-                for (unsigned i=0; i<n; ++i) {
-                    f.push_back(hpx::async(merge_lane, i, ep));
-                }
-                hpx::wait_all(f.begin(), f.end());
-            };
-
         // task that updates cell state in parallel.
-        auto update_cells =
-            [&] (epoch ep) {
-                const unsigned n = cell_groups_.size();
-                std::vector<hpx::future<void>> f;
-                f.reserve(n);
-                for (unsigned i=0; i<n; ++i) {
-                    f.push_back(hpx::async(update_cell, i, ep));
-                }
-                hpx::wait_all(f.begin(), f.end());
-            };
+        auto update_cells = [&](epoch ep) {
+            const unsigned n = cell_groups_.size();
+            std::vector<hpx::future<void>> f;
+            f.reserve(n);
+            for (unsigned i=0; i<n; ++i) {
+                f.push_back(hpx::async(&simulation::update_cell, this, i, ep));
+            }
+            hpx::wait_all(f.begin(), f.end());
+
+            return ep;
+        };
 
         // task that performs spike exchange with the spikes generated in
         // the previous integration period, generating the postsynaptic
@@ -206,8 +230,14 @@ time_type simulation::run(time_type t_final, time_type dt) {
                 communicator_.make_event_queues(global_spikes, pending_events_);
                 PL();
 
-                merge_lanes(ep+1);
+                return merge_lanes(ep+1);
             };
+
+        // set up the counters
+        exchange_task_counter_[0] = num_groups();
+        exchange_task_counter_[1] = num_groups();
+        util::fill(cell_task_counter_[0], 1);
+        util::fill(cell_task_counter_[1], 2);
 
         epoch_ = epoch(0, t_, t_interval, t_final);
         merge_lanes(epoch_);

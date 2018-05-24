@@ -62,6 +62,13 @@ public:
 
 private:
 
+    epoch merge_lane(unsigned i, epoch ep);
+    epoch merge_lanes(epoch ep);
+    epoch update_cell(unsigned i, epoch ep);
+    epoch launch_cell_update(unsigned i, epoch ep);
+
+    time_type dt_;
+
     // Private helper function that sets up the event lanes for an epoch.
     // See comments on implementation for more information.
     //void setup_events(time_type t_from, time_type time_to, std::size_t epoch_id);
