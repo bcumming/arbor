@@ -74,6 +74,11 @@ struct epoch {
         while (n--) ++e;
         return e;
     }
+
+    friend std::ostream& operator<<(std::ostream& o, const epoch& e) {
+        return o << "epoch(" << e.id << ", " << e.t0() << " to " << e.t1() << ")";
+    }
 };
+
 
 } // namespace arb

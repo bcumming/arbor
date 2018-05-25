@@ -21,6 +21,15 @@
 
 namespace arb {
 
+template <typename T, typename U>
+inline bool atomic_dec_test_update(std::atomic<T>& c, U def) {
+    const bool zero = !(--c);
+    if (zero) {
+        c = def;
+    }
+    return zero;
+}
+
 simulation::simulation(const recipe& rec, const domain_decomposition& decomp):
     communicator_(rec, decomp),
     local_spikes_(decomp.groups.size()),
@@ -109,6 +118,7 @@ void simulation::reset() {
 }
 
 epoch simulation::merge_lane(unsigned i, epoch ep) {
+    //std::cout << " E  : " << i << " @ " << ep << " (event_lanes[" << ep.id-1 << "]) -> event_lanes[" << ep.id << "]\n";
     merge_events(
         ep.t0(), ep.t1(),
         event_lanes_[ep.id-1][i],   // in:  the current event lane
@@ -117,22 +127,74 @@ epoch simulation::merge_lane(unsigned i, epoch ep) {
         event_lanes_[ep.id][i]);    // out: the event lane for the next epoch
     pending_events_[i].clear();
 
+    hpx::async(&simulation::launch_cell_update, this, i, ep);
+
     return ep;
 }
 
 epoch simulation::merge_lanes(epoch ep) {
     const unsigned n = communicator_.num_local_cells();
-    std::vector<hpx::future<void>> f;
-    f.reserve(n);
     for (unsigned i=0; i<n; ++i) {
-        f.push_back(hpx::async(&simulation::merge_lane, this, i, ep));
+        hpx::async(&simulation::merge_lane, this, i, ep);
     }
-    hpx::wait_all(f.begin(), f.end());
+
+    // launch next epochs event merge tasks if the exchange has finished
+    ++ep;
+    /*
+    if (atomic_dec_test_update(merge_task_counter_[ep.id], 2)) {
+        std::cout << "launching " << ep << " from merge_lanes\n";
+        merge_lanes(ep);
+    }
+    */
 
     return ep;
 }
 
+// task that performs spike exchange with the spikes generated in
+// the previous integration period, generating the postsynaptic
+// events that must be delivered at the start of the next
+// integration period at the latest.
+epoch simulation::exchange(epoch ep) {
+    //std::cout << "exchange at " << ep << " (local_spikes[" << ep.id << "])\n";
+    PE(communication_exchange_gatherlocal);
+
+    /*******************************/
+    std::size_t nlocal_spikes = 0;
+    auto& input_spikes = local_spikes_[ep.id];
+    for (auto& l: input_spikes) {
+        nlocal_spikes += l.size();
+    }
+    std::vector<spike> local_spikes;
+    local_spikes.reserve(nlocal_spikes);
+    for (const auto& l: input_spikes) {
+        local_spikes.insert(local_spikes.end(), l.begin(), l.end());
+    }
+    /*******************************/
+    PL();
+
+    auto global_spikes = communicator_.exchange(local_spikes);
+
+    PE(communication_spikeio);
+    local_export_callback_(local_spikes);
+    global_export_callback_(global_spikes.values());
+    PL();
+
+    PE(communication_walkspikes);
+    communicator_.make_event_queues(global_spikes, pending_events_);
+    PL();
+
+    // generate events to be delivered in 2 epoch's time.
+    auto epm = ep + 2;
+    //if (!epm.finished() && atomic_dec_test_update(merge_task_counter_[epm.id], 2)) {
+    if (!epm.finished()) {
+        //std::cout << "launching " << epm << "\n";
+        merge_lanes(epm);
+    }
+    return ep;
+};
+
 epoch simulation::update_cell(unsigned i, epoch ep) {
+    //std::cout << " C  : " << i << " @ " << ep << " (event_lanes[" << ep.id << "]) -> local_spikes[" << ep.id << "]\n";
     auto &group = cell_groups_[i];
 
     auto queues = util::subrange_view(
@@ -149,27 +211,30 @@ epoch simulation::update_cell(unsigned i, epoch ep) {
     group->clear_spikes();
     PL();
 
-    // HERE: update cell_task_counter_ and launch if needed
+    //
+    // WARNING: the exchange must be performed before launching
+    // the following cell to avoid the situation where two exchanges
+    // are performed simultaneously
+    //
 
     // HERE: decrement exchange_task_counter_
     auto& c = exchange_task_counter_[ep.id];
-    if (!--c) {
-        // reset atomic counter first, before continuing
-        c = num_groups();
-        // launch spike exchange
-        std::cout << "well, look at that!" << "\n";
+    if (atomic_dec_test_update(c, num_groups())) {
+        exchange(ep);
     }
-    return ep;
+
+    // HERE: update cell_task_counter_ and launch if needed
+    auto f = hpx::async(&simulation::launch_cell_update, this, i, ep+1);
+
+    return ep+1;
 }
 
+// launch update for cell i for epoch ep
 epoch simulation::launch_cell_update(unsigned i, epoch ep) {
-        auto& counter = cell_task_counter_[ep][i];
-        if (!--counter && !ep.finished()) {
-            counter = 2;
-            //return hpx::async(&simulation::update_cell, this, i, ep+1);
-            hpx::async(&simulation::update_cell, this, i, ep+1);
+        auto& c = cell_task_counter_[ep.id-1][i];
+        if (atomic_dec_test_update(c, 2) && !ep.finished()) {
+            hpx::async(&simulation::update_cell, this, i, ep);
         }
-        //return hpx::make_ready_future(ep);
         return ep;
 }
 
@@ -185,76 +250,17 @@ time_type simulation::run(time_type t_final, time_type dt) {
         // to overlap communication and computation.
         const time_type t_interval = min_delay_/2;
 
-        // task that updates cell state in parallel.
-        auto update_cells = [&](epoch ep) {
-            const unsigned n = cell_groups_.size();
-            std::vector<hpx::future<void>> f;
-            f.reserve(n);
-            for (unsigned i=0; i<n; ++i) {
-                f.push_back(hpx::async(&simulation::update_cell, this, i, ep));
-            }
-            hpx::wait_all(f.begin(), f.end());
-
-            return ep;
-        };
-
-        // task that performs spike exchange with the spikes generated in
-        // the previous integration period, generating the postsynaptic
-        // events that must be delivered at the start of the next
-        // integration period at the latest.
-        auto exchange =
-            [&] (epoch ep) {
-                PE(communication_exchange_gatherlocal);
-
-                /*******************************/
-                std::size_t nlocal_spikes = 0;
-                for (auto& l: local_spikes_[ep.id-1]) {
-                    nlocal_spikes += l.size();
-                }
-                std::vector<spike> local_spikes;
-                local_spikes.reserve(nlocal_spikes);
-                for (const auto& l: local_spikes_[ep.id-1]) {
-                    local_spikes.insert(local_spikes.end(), l.begin(), l.end());
-                }
-                /*******************************/
-                PL();
-
-                auto global_spikes = communicator_.exchange(local_spikes);
-
-                PE(communication_spikeio);
-                local_export_callback_(local_spikes);
-                global_export_callback_(global_spikes.values());
-                PL();
-
-                PE(communication_walkspikes);
-                communicator_.make_event_queues(global_spikes, pending_events_);
-                PL();
-
-                return merge_lanes(ep+1);
-            };
-
         // set up the counters
-        exchange_task_counter_[0] = num_groups();
-        exchange_task_counter_[1] = num_groups();
-        util::fill(cell_task_counter_[0], 1);
-        util::fill(cell_task_counter_[1], 2);
-
-        epoch_ = epoch(0, t_, t_interval, t_final);
-        merge_lanes(epoch_);
-        while (!epoch_.finished()) {
-            // run the tasks, overlapping if the threading model and number of
-            // available threads permits it.
-            auto fe = hpx::async(exchange, epoch_);
-            auto fu = hpx::async(update_cells, epoch_);
-
-            fe.get();
-            fu.get();
-
-            ++epoch_;
+        util::fill(exchange_task_counter_, num_groups());
+        util::fill(merge_task_counter_, 2);
+        for (auto& c: cell_task_counter_) {
+            util::fill(c, 2);
         }
+        util::fill(cell_task_counter_[-1], 1);
 
-        // Run the exchange one last time to ensure that all spikes are output to file.
-        exchange(epoch_);
+        auto e = epoch(0, t_, t_interval, t_final);
+        merge_lanes(e);
+        merge_lanes(e+1);
     });
     hpx::suspend();
 

@@ -66,18 +66,15 @@ private:
     epoch merge_lanes(epoch ep);
     epoch update_cell(unsigned i, epoch ep);
     epoch launch_cell_update(unsigned i, epoch ep);
+    epoch exchange(epoch ep);
 
     time_type dt_;
 
     // Private helper function that sets up the event lanes for an epoch.
     // See comments on implementation for more information.
-    //void setup_events(time_type t_from, time_type time_to, std::size_t epoch_id);
     void setup_events(epoch ep);
 
     std::size_t num_groups() const;
-
-    // keep track of information about the current integration interval
-    epoch epoch_;
 
     time_type t_ = 0.;
     time_type min_delay_;
@@ -103,8 +100,9 @@ private:
     epoch_vector<pse_vector> event_lanes_;
 
     // Counters used to determine when tasks are ready to launch
-    epoch_buffer<std::atomic<int>> exchange_task_counter_;
-    epoch_vector<std::atomic<int>> cell_task_counter_;
+    epoch_buffer<std::atomic<int>, 3> merge_task_counter_;
+    epoch_buffer<std::atomic<int>, 3> exchange_task_counter_;
+    epoch_vector<std::atomic<int>, 3> cell_task_counter_;
 
     std::vector<pse_vector> pending_events_;
 

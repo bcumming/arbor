@@ -8,13 +8,13 @@
 
 namespace arb {
 
-template <typename T>
+template <typename T, int N=2>
 class epoch_buffer {
 public:
     using index_type = epoch::index_type;
     using value_type = T;
-    using iterator = typename std::array<T,2>::iterator;
-    using const_iterator = typename std::array<T,2>::const_iterator;
+    using iterator = typename std::array<T,N>::iterator;
+    using const_iterator = typename std::array<T,N>::const_iterator;
 
     epoch_buffer() = default;
 
@@ -37,15 +37,18 @@ public:
     const_iterator end()   const { return buffers_.end(); }
 
 private:
-    std::array<T, 2> buffers_;
+    std::array<T, N> buffers_;
     int index(index_type i) const {
-        return i&1;
+        // WARNING: this is only guarenteed to work for i>=-N because
+        // the result of modulo with negative arguments is implementation
+        // defined.
+        return (i+N)%N;
     }
 };
 
-template <typename T>
+template <typename T, int N=2>
 struct epoch_vector {
-    using store_type = epoch_buffer<std::vector<T>>;
+    using store_type = epoch_buffer<std::vector<T>, N>;
     using index_type = typename store_type::index_type;
     store_type store_;
     using iterator = typename store_type::iterator;
@@ -54,8 +57,9 @@ struct epoch_vector {
     using value_type = T;
 
     epoch_vector(std::size_t n) {
-        store_[0] = std::vector<T>(n);
-        store_[1] = std::vector<T>(n);
+        for (auto& s: store_) {
+            s = std::vector<T>(n);
+        }
     }
 
     std::vector<T>& operator[](index_type i) {

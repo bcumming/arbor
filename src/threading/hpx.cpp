@@ -14,7 +14,7 @@ namespace arb {
 
 hpx_guard::hpx_guard(int argc, char** argv) {
     std::vector<std::string> cfg = {
-        "hpx.os_threads=4",
+        "hpx.os_threads=1",
     };
 
     std::cout << ":::: hpx: starting" << std::endl;
