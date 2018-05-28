@@ -1,0 +1,9 @@
+
+event_lanes[i]  -> events to be delivered in epoch i
+local_spikes[i] -> spikes generated in epoch i
+
+E[i] : (events[i-1]) -> events[i]
+C[i] : (events[i])   -> spikes[i]
+
+merge_task_counter_[i] == 0 -> launch E(i)
+
