@@ -138,14 +138,12 @@ epoch simulation::merge_lanes(epoch ep) {
         hpx::async(&simulation::merge_lane, this, i, ep);
     }
 
-    // launch next epochs event merge tasks if the exchange has finished
+    // launch next epoch's event merge tasks if the exchange has finished
     ++ep;
-    /*
     if (atomic_dec_test_update(merge_task_counter_[ep.id], 2)) {
-        std::cout << "launching " << ep << " from merge_lanes\n";
+        //std::cout << "launching " << ep << " from merge_lanes\n";
         merge_lanes(ep);
     }
-    */
 
     return ep;
 }
@@ -185,9 +183,7 @@ epoch simulation::exchange(epoch ep) {
 
     // generate events to be delivered in 2 epoch's time.
     auto epm = ep + 2;
-    //if (!epm.finished() && atomic_dec_test_update(merge_task_counter_[epm.id], 2)) {
-    if (!epm.finished()) {
-        //std::cout << "launching " << epm << "\n";
+    if (!epm.finished() && atomic_dec_test_update(merge_task_counter_[epm.id], 2)) {
         merge_lanes(epm);
     }
     return ep;
@@ -223,7 +219,6 @@ epoch simulation::update_cell(unsigned i, epoch ep) {
         exchange(ep);
     }
 
-    // HERE: update cell_task_counter_ and launch if needed
     auto f = hpx::async(&simulation::launch_cell_update, this, i, ep+1);
 
     return ep+1;
@@ -251,8 +246,18 @@ time_type simulation::run(time_type t_final, time_type dt) {
         const time_type t_interval = min_delay_/2;
 
         // set up the counters
+
+        // exchange task counters are all set to num_groups
         util::fill(exchange_task_counter_, num_groups());
+
+        // Merge counters start at 2, because merge_lanes[i] is launched with
+        // both exchange[i-2] and merge_lanes[i-1] have finished.
+        // The simulation is started by launching merge_task for epoch 0, wich
+        // will launch the cell update for epoch 0 and decrement the merge task
+        // counter for epoch 1. Exchange[0] is implicitly ready, so start the
+        // merge_counter[i] at 1, so it is started when merge_lanes[0] finishes.
         util::fill(merge_task_counter_, 2);
+        merge_task_counter_[1] = 1;
         for (auto& c: cell_task_counter_) {
             util::fill(c, 2);
         }
@@ -260,7 +265,6 @@ time_type simulation::run(time_type t_final, time_type dt) {
 
         auto e = epoch(0, t_, t_interval, t_final);
         merge_lanes(e);
-        merge_lanes(e+1);
     });
     hpx::suspend();
 
