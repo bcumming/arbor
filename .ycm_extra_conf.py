@@ -57,7 +57,7 @@ flags = [
     '-I',
     'ext/json/single_include',
     '-I',
-    'build/include',
+    'build/arbor/include/',
     '-I',
     '/cm/shared/apps/cuda/8.0.44/include', # TODO: run a command to find this on "any" system
     '-I',
