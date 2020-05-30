@@ -1,0 +1,10 @@
+{
+    "name": "test",
+    "num-cells-per-rank": 100,
+    "num-ranks": 1,
+    "num-synapses": 1000,
+    "duration": 100,
+    "min-delay": 10,
+    "spike-frequency": 100,
+    "realtime-ratio": 0.1
+}
