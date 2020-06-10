@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include <arbor/common_types.hpp>
@@ -74,6 +75,7 @@ private:
     std::vector<cell_size_type> connection_part_;
     std::vector<cell_size_type> index_divisions_;
     util::partition_view_type<std::vector<cell_size_type>> index_part_;
+    std::unordered_map<cell_size_type, std::pair<const connection*, const connection*>> index_;
 
     distributed_context_handle distributed_;
     task_system_handle thread_pool_;

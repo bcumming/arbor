@@ -61,6 +61,7 @@ communicator::communicator(const recipe& rec,
     for (auto g: dom_dec.groups) {
         util::append(gids, g.gids);
     }
+
     // Build the connection information for local cells in parallel.
     std::vector<gid_info> gid_infos;
     gid_infos.resize(num_local_cells_);
@@ -111,6 +112,20 @@ communicator::communicator(const recipe& rec,
         [&](cell_size_type i) {
             util::sort(util::subrange_view(connections_, cp[i], cp[i+1]));
         });
+
+    // Construct a hash table for looking up cells.
+    if (!connections_.empty()) {
+        auto ncons = connections_.size();
+        cell_gid_type i = 0;
+        while (i<ncons) {
+            auto gid = connections_[i].source().gid;
+            auto b = &connections_[i];
+            while (i<ncons && connections_[i].source().gid==gid) ++i;
+            auto e = &connections_[i];
+            index_[gids[gid]] = {b, e};
+        }
+    }
+
 }
 
 std::pair<cell_size_type, cell_size_type> communicator::group_queue_range(cell_size_type i) {
@@ -152,6 +167,17 @@ void communicator::make_event_queues(
     using util::make_span;
     using util::make_range;
 
+#if 0
+    for (const auto& s: global_spikes.values()) {
+        const auto sid = s.source.gid;
+        auto it = index_.find(sid);
+        if (it!=index_.end()) {
+            for (auto c: make_range(it->second)) {
+                queues[c.index_on_domain()].push_back(c.make_event(s));
+            }
+        }
+    }
+#else
     const auto& sp = global_spikes.partition();
     const auto& cp = connection_part_;
     for (auto dom: make_span(num_domains_)) {
@@ -201,6 +227,7 @@ void communicator::make_event_queues(
             }
         }
     }
+#endif
 }
 
 std::uint64_t communicator::num_spikes() const {
