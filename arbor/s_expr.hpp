@@ -26,6 +26,10 @@ struct no_s_expr_token: arbor_internal_error {
     no_s_expr_token(): arbor_internal_error("no_s_expr_token") {}
 };
 
+struct bad_s_expr_list: arbor_internal_error {
+    bad_s_expr_list(): arbor_internal_error("not a valid s expression list") {}
+};
+
 struct bad_s_expr_access: arbor_exception {
     bad_s_expr_access(const std::string& msg):
         arbor_exception("bad_s_expr_access: "+msg)
@@ -382,6 +386,9 @@ struct list_adaptor {
         private:
 
         bool finished() const {
+            if (inner_->is_atom() && *inner_) {
+                throw bad_s_expr_list();
+            }
             // Finished if reached nil_t
             return !*inner_;
         }
