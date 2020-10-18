@@ -259,7 +259,7 @@ parse_hopefully<std::any> eval(const s_expr& e);
 parse_hopefully<std::vector<std::any>> eval_args(const s_expr& e) {
     if (!e) return {std::vector<std::any>{}}; // empty argument list
     std::vector<std::any> args;
-    for (auto& h: e) {
+    for (auto& h: list_adaptor{e}) {
         if (auto arg=eval(h)) {
             args.push_back(std::move(*arg));
         }

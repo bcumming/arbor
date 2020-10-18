@@ -187,13 +187,16 @@ enum class tok {
 
 std::ostream& operator<<(std::ostream&, const tok&);
 
+// Token generated when lexing for s-expressions
+
 struct token {
     src_location loc;
     tok kind;
     std::string spelling;
 };
-
 std::ostream& operator<<(std::ostream&, const token&);
+
+// Atom types
 
 struct s_expr_symbol {
     std::string str;
@@ -268,6 +271,45 @@ struct s_expr {
             return *state;
         }
     };
+
+    // An s_expr can be one of
+    //      1. an atom
+    //      2. a pair of s_expr (head and tail)
+    // The s_expr uses a util::variant to represent these two possible states,
+    // which requires using an incomplete definition of s_expr, requiring
+    // with a std::unique_ptr via value_wrapper.
+
+    using cons = s_pair<value_wrapper<s_expr>>;
+    std::variant<atom, cons> state_ = nil_t{};// token{{0,0}, tok::nil, "nil"};
+    std::shared_ptr<token> token_;
+
+    s_expr(const s_expr& s) = default;
+    s_expr() = default;
+    s_expr(const token& t): state_(to_atom(t)), token_(std::make_shared<arb::token>(std::move(t))) {}
+    s_expr(s_expr l, s_expr r):
+        state_(cons(std::move(l), std::move(r)))
+    {}
+
+    bool is_atom() const;
+
+    const token& tok() const;
+    const atom& as_atom() const;
+
+    operator bool() const;
+
+    const s_expr& head() const;
+    const s_expr& tail() const;
+    s_expr& head();
+    s_expr& tail();
+
+    bool is_error() const { return is_atom() ? std::holds_alternative<s_expr_error>(atom()): false; }
+
+    friend std::ostream& operator<<(std::ostream& o, const s_expr& x);
+};
+
+struct list_adaptor {
+    const s_expr& expression_;
+    list_adaptor(const s_expr& e): expression_(e) {};
 
     template <bool Const>
     class s_expr_iterator_impl {
@@ -355,49 +397,15 @@ struct s_expr {
         pointer inner_;
     };
 
-    using iterator       = s_expr_iterator_impl<false>;
+    //using iterator       = s_expr_iterator_impl<false>;
     using const_iterator = s_expr_iterator_impl<true>;
 
-    // An s_expr can be one of
-    //      1. an atom
-    //      2. a pair of s_expr (head and tail)
-    // The s_expr uses a util::variant to represent these two possible states,
-    // which requires using an incomplete definition of s_expr, requiring
-    // with a std::unique_ptr via value_wrapper.
-
-    using cons = s_pair<value_wrapper<s_expr>>;
-    std::variant<atom, cons> state_ = nil_t{};// token{{0,0}, tok::nil, "nil"};
-    std::shared_ptr<token> token_;
-
-    s_expr(const s_expr& s) = default;
-    s_expr() = default;
-    s_expr(const token& t): state_(to_atom(t)), token_(std::make_shared<arb::token>(std::move(t))) {}
-    s_expr(s_expr l, s_expr r):
-        state_(cons(std::move(l), std::move(r)))
-    {}
-
-    bool is_atom() const;
-
-    const token& tok() const;
-    const atom& as_atom() const;
-
-    operator bool() const;
-
-    const s_expr& head() const;
-    const s_expr& tail() const;
-    s_expr& head();
-    s_expr& tail();
-
-    iterator       begin()        { return {*this}; }
-    iterator       end()          { return iterator::sentinel{}; }
-    const_iterator begin()  const { return {*this}; }
+    //iterator       begin()        { return {*this}; }
+    //iterator       end()          { return iterator::sentinel{}; }
+    const_iterator begin()  const { return expression_; }
     const_iterator end()    const { return const_iterator::sentinel{}; }
-    const_iterator cbegin() const { return {*this}; }
+    const_iterator cbegin() const { return expression_; }
     const_iterator cend()   const { return const_iterator::sentinel{}; }
-
-    bool is_error() const { return is_atom() ? std::holds_alternative<s_expr_error>(atom()): false; }
-
-    friend std::ostream& operator<<(std::ostream& o, const s_expr& x);
 };
 
 src_location location(const s_expr& l);

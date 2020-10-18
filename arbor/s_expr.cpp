@@ -455,7 +455,7 @@ std::ostream& operator<<(std::ostream& o, const s_expr& x) {
 #if 1
     o << "(";
     bool first = true;
-    for (auto& e: x) {
+    for (auto& e: list_adaptor{x}) {
         o << (first? "": " ") << e;
         first = false;
     }
