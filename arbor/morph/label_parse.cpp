@@ -280,6 +280,7 @@ parse_hopefully<std::vector<std::any>> eval_args(const s_expr& e) {
 std::string eval_description(const char* name, const std::vector<std::any>& args) {
     auto type_string = [](const std::type_info& t) -> const char* {
         if (t==typeid(int))         return "integer";
+        if (t==typeid(long long))   return "long long";
         if (t==typeid(double))      return "real";
         if (t==typeid(arb::region)) return "region";
         if (t==typeid(arb::locset)) return "locset";
@@ -321,27 +322,33 @@ label_parse_error parse_error(std::string const& msg, src_location loc) {
 // If there was an unexpected/fatal error, an exception will be thrown.
 parse_hopefully<std::any> eval(const s_expr& e) {
     if (e.is_atom()) {
-        auto& t = e.atom();
-        switch (t.kind) {
-            case tok::integer:
-                return {std::stoi(t.spelling)};
-            case tok::real:
-                return {std::stod(t.spelling)};
-            case tok::nil:
-                return {nil_tag()};
-            case tok::string:
-                return std::any{std::string(t.spelling)};
-            // An arbitrary symbol in a region/locset expression is an error, and is
-            // often a result of not quoting a label correctly.
-            case tok::symbol:
-                return util::unexpected(parse_error(
-                        util::pprintf("Unexpected symbol '{}' in a region or locset definition. If '{}' is a label, it must be quoted {}{}{}", e, e, '"', e, '"'),
-                        location(e)));
-            case tok::error:
-                return util::unexpected(parse_error(e.atom().spelling, location(e)));
-            default:
-                return util::unexpected(parse_error(util::pprintf("Unexpected term '{}' in a region or locset definition", e), location(e)));
-        }
+        return std::visit(
+                [&e] (auto&& at) -> parse_hopefully<std::any> {
+                    using T = std::decay_t<decltype(at)>;
+                    if constexpr (std::is_same_v<T, long long>) {
+                        return std::any{int(at)};
+                    }
+                    if constexpr (std::is_same_v<T, double>) {
+                        return std::any{at};
+                    }
+                    if constexpr (std::is_same_v<T, std::string>) {
+                        return std::any{at};
+                    }
+                    if constexpr (std::is_same_v<T, nil_t>) {
+                        return std::any{at};
+                    }
+                    if constexpr (std::is_same_v<T, s_expr_symbol>) {
+                        return util::unexpected(parse_error(
+                                util::pprintf("Unexpected symbol '{}' in a region or locset definition. If '{}' is a label, it must be quoted {}{}{}", e, e, '"', e, '"'),
+                                location(e)));
+                    }
+                    if constexpr (std::is_same_v<T, s_expr_error>) {
+                        auto& t = e.tok();
+                        return util::unexpected(parse_error(t.spelling, t.loc));
+                    }
+                    return util::unexpected(parse_error(util::pprintf("Unexpected term '{}' in a region or locset definition", e.tok().spelling), location(e)));
+                },
+                e.as_atom());
     }
     if (e.head().is_atom()) {
         // This must be a function evaluation, where head is the function name, and
@@ -354,7 +361,7 @@ parse_hopefully<std::any> eval(const s_expr& e) {
         }
 
         // Find all candidate functions that match the name of the function.
-        auto& name = e.head().atom().spelling;
+        std::string name = get<s_expr_symbol>(e.head());
         auto matches = eval_map.equal_range(name);
 
         // Search for a candidate that matches the argument list.

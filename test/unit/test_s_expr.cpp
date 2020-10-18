@@ -38,64 +38,66 @@ TEST(s_expr, transmogrify) {
 }
 
 TEST(s_expr, atoms) {
-    auto get_atom = [](s_expr e) {
-        return e.atom();
-    };
-
     for (auto spelling: {"foo", "bar_", "car1", "car_1", "x_1__", "x/bar", "x/bar@4.2"}){
-        auto a = get_atom(parse_s_expr(spelling));
-        EXPECT_EQ(a.kind, tok::symbol);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr(spelling);
+        EXPECT_EQ(e.tok().kind, tok::symbol);
+        EXPECT_EQ(e.tok().spelling, spelling);
+        EXPECT_EQ(get<std::string>(e), spelling);
+        EXPECT_EQ(std::string(get<s_expr_symbol>(e)), spelling);
     }
     // test parsing of integers
     for (auto spelling: {"0", "-0", "1", "42", "-3287"}){
-        auto a = get_atom(parse_s_expr(spelling));
-        EXPECT_EQ(a.kind, tok::integer);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr(spelling);
+        EXPECT_EQ(e.tok().kind, tok::integer);
+        EXPECT_EQ(e.tok().spelling, spelling);
+        EXPECT_EQ(get<int>(e), std::stoi(spelling));
+        EXPECT_EQ(get<double>(e), std::stod(spelling));
     }
     // test parsing of real numbers
     for (auto spelling: {"0.", "-0.0", "1.21", "42.", "-3287.12"}){
-        auto a = get_atom(parse_s_expr(spelling));
-        EXPECT_EQ(a.kind, tok::real);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr(spelling);
+        EXPECT_EQ(e.tok().kind, tok::real);
+        EXPECT_EQ(e.tok().spelling, spelling);
+        EXPECT_EQ(get<double>(e), std::stod(spelling));
     }
     // test parsing of strings
     for (auto spelling: {"foo", "dog cat", ""}) {
         auto s = "\""s+spelling+"\"";
-        auto a = get_atom(parse_s_expr(s));
-        EXPECT_EQ(a.kind, tok::string);
+        auto e = parse_s_expr(s);
+        EXPECT_EQ(e.tok().kind, tok::string);
+        EXPECT_EQ(e.tok().spelling, spelling);
+        EXPECT_EQ(get<std::string>(e), spelling);
     }
 }
 
 TEST(s_expr, atoms_in_parens) {
-    auto get_atom = [](s_expr e) {
-        EXPECT_EQ(1u, length(e));
-        EXPECT_TRUE(e.head().is_atom());
-        return e.head().atom();
+    auto assert_mono_list = [](const s_expr& e) {
+        return !e.is_atom() && !e.tail();
     };
-
     for (auto spelling: {"foo", "bar_", "car1", "car_1", "x_1__", "x/bar", "x/bar@4.2"}){
-        auto a = get_atom(parse_s_expr("("s+spelling+")"));
-        EXPECT_EQ(a.kind, tok::symbol);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr("("s+spelling+")");
+        EXPECT_TRUE(assert_mono_list(e));
+        EXPECT_EQ(std::string(get<s_expr_symbol>(e.head())), spelling);
     }
     // test parsing of integers
     for (auto spelling: {"0", "-0", "1", "42", "-3287"}){
-        auto a = get_atom(parse_s_expr("("s+spelling+")"));
-        EXPECT_EQ(a.kind, tok::integer);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr("("s+spelling+")");
+        EXPECT_TRUE(assert_mono_list(e));
+        EXPECT_EQ(get<int>(e.head()), std::stoi(spelling));
+        EXPECT_EQ(get<double>(e.head()), std::stod(spelling));
     }
     // test parsing of real numbers
     for (auto spelling: {"0.", "-0.0", "1.21", "42.", "-3287.12"}){
-        auto a = get_atom(parse_s_expr("("s+spelling+")"));
-        EXPECT_EQ(a.kind, tok::real);
-        EXPECT_EQ(a.spelling, spelling);
+        auto e = parse_s_expr("("s+spelling+")");
+        EXPECT_TRUE(assert_mono_list(e));
+        EXPECT_EQ(get<double>(e.head()), std::stod(spelling));
     }
     // test parsing of strings
     for (auto spelling: {"foo", "dog cat", ""}) {
         auto s = "(\""s+spelling+"\")";
-        auto a = get_atom(parse_s_expr(s));
-        EXPECT_EQ(a.kind, tok::string);
+        auto e = parse_s_expr(s);
+        EXPECT_TRUE(assert_mono_list(e));
+        EXPECT_EQ(get<std::string>(e.head()), spelling);
     }
 }
 

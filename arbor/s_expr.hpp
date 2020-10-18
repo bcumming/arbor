@@ -1,5 +1,7 @@
 #pragma once
 
+#include <arbor/arbexcept.hpp>
+
 #include <cstddef>
 #include <cstring>
 #include <iterator>
@@ -12,6 +14,29 @@
 #include <vector>
 
 namespace arb {
+
+// Exception types:
+struct bad_s_expr_get: arbor_exception {
+    bad_s_expr_get(const std::string& msg):
+        arbor_exception("bad_s_expr_get: "+msg)
+    {}
+};
+
+struct no_s_expr_token: arbor_internal_error {
+    no_s_expr_token(): arbor_internal_error("no_s_expr_token") {}
+};
+
+struct bad_s_expr_access: arbor_exception {
+    bad_s_expr_access(const std::string& msg):
+        arbor_exception("bad_s_expr_access: "+msg)
+    {}
+};
+
+struct bad_s_expr_tok2atom: arbor_exception {
+    bad_s_expr_tok2atom(const std::string& msg):
+        arbor_exception("bad_s_expr_tok2atom: "+msg)
+    {}
+};
 
 // Forward iterator that can translate a raw stream to valid s_expr input if,
 // perchance, you want to parse a half-hearted attempt at an s-expression
@@ -170,6 +195,31 @@ struct token {
 
 std::ostream& operator<<(std::ostream&, const token&);
 
+struct s_expr_symbol {
+    std::string str;
+    operator std::string() const { return str; }
+    bool friend operator< (const s_expr_symbol& lhs, const s_expr_symbol& rhs) { return lhs.str<rhs.str; }
+    bool friend operator==(const s_expr_symbol& lhs, const s_expr_symbol& rhs) { return lhs.str==rhs.str; }
+};
+
+struct s_expr_error {
+    std::string str;
+    operator std::string() const { return str; }
+};
+
+struct nil_t {};
+
+using atom = std::variant<double, long long, std::string, s_expr_symbol, nil_t, s_expr_error>;
+std::ostream& operator<<(std::ostream&, const atom&);
+
+atom to_atom(const token& t);
+
+namespace s_expr_literals {
+    inline s_expr_symbol operator "" _symbol(const char* chars, size_t size) {
+        return {chars};
+    }
+}
+
 struct s_expr {
     template <typename U>
     struct s_pair {
@@ -290,7 +340,8 @@ struct s_expr {
         private:
 
         bool finished() const {
-            return inner_->is_atom() && inner_->atom().kind==tok::nil;
+            // Finished if reached nil_t
+            return !*inner_;
         }
 
         void advance() {
@@ -314,19 +365,21 @@ struct s_expr {
     // which requires using an incomplete definition of s_expr, requiring
     // with a std::unique_ptr via value_wrapper.
 
-    using pair_type = s_pair<value_wrapper<s_expr>>;
-    std::variant<token, pair_type> state = token{{0,0}, tok::nil, "nil"};
+    using cons = s_pair<value_wrapper<s_expr>>;
+    std::variant<atom, cons> state_ = nil_t{};// token{{0,0}, tok::nil, "nil"};
+    std::shared_ptr<token> token_;
 
-    s_expr(const s_expr& s): state(s.state) {}
+    s_expr(const s_expr& s) = default;
     s_expr() = default;
-    s_expr(token t): state(std::move(t)) {}
+    s_expr(const token& t): state_(to_atom(t)), token_(std::make_shared<arb::token>(std::move(t))) {}
     s_expr(s_expr l, s_expr r):
-        state(pair_type(std::move(l), std::move(r)))
+        state_(cons(std::move(l), std::move(r)))
     {}
 
     bool is_atom() const;
 
-    const token& atom() const;
+    const token& tok() const;
+    const atom& as_atom() const;
 
     operator bool() const;
 
@@ -342,15 +395,34 @@ struct s_expr {
     const_iterator cbegin() const { return {*this}; }
     const_iterator cend()   const { return const_iterator::sentinel{}; }
 
+    bool is_error() const { return is_atom() ? std::holds_alternative<s_expr_error>(atom()): false; }
+
     friend std::ostream& operator<<(std::ostream& o, const s_expr& x);
 };
 
-std::size_t length(const s_expr& l);
 src_location location(const s_expr& l);
 
 s_expr parse_s_expr(const std::string& line);
 s_expr parse_s_expr(transmogrifier begin);
 std::vector<s_expr> parse_multi(transmogrifier begin);
+
+template <typename T>
+T get(const s_expr& e);
+
+template <> double get<double>(const s_expr&);
+template <> int get<int>(const s_expr&);
+template <> std::string get<std::string>(const s_expr&);
+template <> s_expr_symbol get<s_expr_symbol>(const s_expr&);
+template <> s_expr_error get<s_expr_error>(const s_expr&);
+
+bool is_numeric(const s_expr& e);
+bool is_real(const s_expr& e);
+bool is_integral(const s_expr& e);
+bool is_error(const s_expr& e);
+bool is_symbol(const s_expr& e);
+bool is_string(const s_expr& e);
+bool is_nil(const s_expr& e);
+
 
 } // namespace arb
 

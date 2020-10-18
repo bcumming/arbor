@@ -11,6 +11,7 @@
 
 #include "util/strprintf.hpp"
 #include "s_expr.hpp"
+
 namespace arb {
 
 inline bool is_alphanumeric(char c) {
@@ -42,6 +43,40 @@ inline bool is_valid_symbol_char(char c) {
     }
 }
 
+std::ostream& operator<<(std::ostream& o, const nil_t& l) {
+    return o << "()";
+}
+
+std::ostream& operator<<(std::ostream& o, const s_expr_symbol& l) {
+    return o << l.str;
+}
+
+std::ostream& operator<<(std::ostream& o, const s_expr_error& l) {
+    return o << l.str;
+}
+
+std::ostream& operator<<(std::ostream& o, const atom& a) {
+    if (std::holds_alternative<nil_t>(a)) {
+        return o << get<nil_t>(a);
+    }
+    if (std::holds_alternative<double>(a)) {
+        return o << get<double>(a);
+    }
+    if (std::holds_alternative<std::string>(a)) {
+        return o << "\"" << get<std::string>(a) << "\"";
+    }
+    if (std::holds_alternative<long long>(a)) {
+        return o << get<long long>(a);
+    }
+    if (std::holds_alternative<s_expr_symbol>(a)) {
+        return o << get<s_expr_symbol>(a);
+    }
+    if (std::holds_alternative<s_expr_error>(a)) {
+        return o << get<s_expr_error>(a);
+    }
+    throw arbor_internal_error("can't print atom");
+}
+
 std::ostream& operator<<(std::ostream& o, const src_location& l) {
     return o << l.line << ":" << l.column;
 }
@@ -58,7 +93,7 @@ std::ostream& operator<<(std::ostream& o, const tok& t) {
         case tok::eof:    return o << "eof";
         case tok::error:  return o << "error";
     }
-    return o << "<unknown>";
+    throw arbor_internal_error("can't print type of token");
 }
 
 std::ostream& operator<<(std::ostream& o, const token& t) {
@@ -66,6 +101,27 @@ std::ostream& operator<<(std::ostream& o, const token& t) {
         return o << util::pprintf("\"{}\"", t.spelling);
     }
     return o << util::pprintf("{}", t.spelling);
+}
+
+//using atom = std::variant<double, long long, std::string, symbol, nil_t>;
+
+atom to_atom(const token& t) {
+    switch (t.kind) {
+        case tok::real:
+            return std::stod(t.spelling);
+        case tok::integer:
+            return (long long)std::stoi(t.spelling);
+        case tok::string:
+            return t.spelling;
+        case tok::symbol:
+            return s_expr_symbol{t.spelling};
+        case tok::error:
+            return s_expr_error{util::strprintf("(error \"{}\" {})", t.spelling, t.loc)};
+        case tok::nil:
+            return nil_t();
+        default:
+            throw bad_s_expr_tok2atom(util::strprintf("{}", t));
+    }
 }
 
 //
@@ -344,36 +400,58 @@ private:
 // s expression members
 //
 
-bool s_expr::is_atom() const {
-    return state.index()==0;
+const token& s_expr::tok() const {
+    if (!token_) {
+        throw no_s_expr_token();
+    }
+    return *token_;
 }
 
-const token& s_expr::atom() const {
-    return std::get<0>(state);
+bool s_expr::is_atom() const {
+    return state_.index()==0;
+}
+
+const atom& s_expr::as_atom() const {
+    if (!is_atom()) {
+        throw bad_s_expr_access("not an atom");
+    }
+    return std::get<0>(state_);
 }
 
 const s_expr& s_expr::head() const {
-    return std::get<1>(state).head.get();
+    if (is_atom()) {
+        throw bad_s_expr_access("cant take head of an atom");
+    }
+    return std::get<1>(state_).head.get();
 }
 
 const s_expr& s_expr::tail() const {
-    return std::get<1>(state).tail.get();
+    if (is_atom()) {
+        throw bad_s_expr_access("cant take tail of an atom");
+    }
+    return std::get<1>(state_).tail.get();
 }
 
 s_expr& s_expr::head() {
-    return std::get<1>(state).head.get();
+    if (is_atom()) {
+        throw bad_s_expr_access("cant take head of an atom");
+    }
+    return std::get<1>(state_).head.get();
 }
 
 s_expr& s_expr::tail() {
-    return std::get<1>(state).tail.get();
+    if (is_atom()) {
+        throw bad_s_expr_access("cant take tail of an atom");
+    }
+    return std::get<1>(state_).tail.get();
 }
 
 s_expr::operator bool() const {
-    return !(is_atom() && atom().kind==tok::nil);
+    return !(is_atom() && std::holds_alternative<nil_t>(as_atom()));
 }
 
 std::ostream& operator<<(std::ostream& o, const s_expr& x) {
-    if (x.is_atom()) return o << x.atom();
+    if (x.is_atom()) return o << x.as_atom();
 #if 1
     o << "(";
     bool first = true;
@@ -387,20 +465,8 @@ std::ostream& operator<<(std::ostream& o, const s_expr& x) {
 #endif
 }
 
-std::size_t length(const s_expr& l) {
-    // The length of an atom is 1.
-    if (l.is_atom() && l) {
-        return 1;
-    }
-    // nil marks the end of a list.
-    if (!l) {
-        return 0u;
-    }
-    return 1+length(l.tail());
-}
-
 src_location location(const s_expr& l) {
-    if (l.is_atom()) return l.atom().loc;
+    if (l.is_atom()) return l.tok().loc;
     return location(l.head());
 }
 
@@ -436,7 +502,7 @@ s_expr parse(lexer& L) {
             }
             else if (t.kind == tok::lparen) {
                 auto e = parse(L);
-                if (e.is_atom() && e.atom().kind==tok::error) return e;
+                if (is_error(e)) return e;
                 *n = {std::move(e), {}};
                 t = L.current();
             }
@@ -468,7 +534,7 @@ s_expr parse(lexer& L) {
 s_expr parse_s_expr(transmogrifier begin) {
     lexer l(begin);
     s_expr result = impl::parse(l);
-    const bool err = result.is_atom()? result.atom().kind==tok::error: false;
+    const bool err = result.is_error();
     if (!err) {
         auto t = l.current();
         if (t.kind!=tok::eof) {
@@ -493,11 +559,95 @@ std::vector<s_expr> parse_multi_s_expr(transmogrifier begin) {
     while (!error && l.current().kind!=tok::eof) {
         result.push_back(impl::parse(l));
         const auto& e = result.back();
-        error = e.is_atom() && e.atom().kind==tok::error;
+        error = e.is_error();
     }
 
     return result;
 }
 
+bool is_numeric(const s_expr& e) {
+    return e.is_atom() &&
+        (std::holds_alternative<double>(e.as_atom()) ||
+        std::holds_alternative<long long>(e.as_atom()));
+}
+
+bool is_real(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<double>(e.as_atom());
+}
+
+bool is_integral(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<long long>(e.as_atom());
+}
+
+bool is_error(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<s_expr_error>(e.as_atom());
+}
+
+bool is_symbol(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<s_expr_symbol>(e.as_atom());
+}
+
+bool is_string(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<std::string>(e.as_atom());
+}
+
+bool is_nil(const s_expr& e) {
+    return e.is_atom() && std::holds_alternative<nil_t>(e.as_atom());
+}
+
+template <>
+double get<double>(const s_expr& e) {
+    if (e.is_atom()) {
+        auto& a = e.as_atom();
+        if (std::holds_alternative<double>(a)) {
+            return std::get<double>(a);
+        }
+        if (std::holds_alternative<long long>(a)) {
+            return std::get<long long>(a);
+        }
+    }
+    throw bad_s_expr_get(util::strprintf("unable to cast {} to double", e));
+}
+
+template <>
+int get<int>(const s_expr& e) {
+    if (e.is_atom() && std::holds_alternative<long long>(e.as_atom())) {
+        return std::get<long long>(e.as_atom());
+    }
+    throw bad_s_expr_get(util::strprintf("unable to cast {} to int", e));
+}
+
+template <>
+std::string get<std::string>(const s_expr& e) {
+    if (e.is_atom()) {
+        auto& a = e.as_atom();
+        if (std::holds_alternative<std::string>(a)) {
+            return std::get<std::string>(a);
+        }
+        if (std::holds_alternative<s_expr_symbol>(a)) {
+            return std::get<s_expr_symbol>(a);
+        }
+        if (std::holds_alternative<s_expr_error>(a)) {
+            return std::get<s_expr_error>(a);
+        }
+    }
+    throw bad_s_expr_get(util::strprintf("unable to cast {} to string", e));
+}
+
+template <>
+s_expr_symbol get<s_expr_symbol>(const s_expr& e) {
+    if (e.is_atom() && std::holds_alternative<s_expr_symbol>(e.as_atom())) {
+        return std::get<s_expr_symbol>(e.as_atom());
+    }
+    throw bad_s_expr_get(util::strprintf("unable to cast {} to symbol", e));
+}
+
+template <>
+s_expr_error get<s_expr_error>(const s_expr& e) {
+    if (e.is_atom() && std::holds_alternative<s_expr_error>(e.as_atom())) {
+        return std::get<s_expr_error>(e.as_atom());
+    }
+    throw bad_s_expr_get(util::strprintf("unable to cast {} to error", e));
+}
 
 } // namespace arb
