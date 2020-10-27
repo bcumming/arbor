@@ -159,6 +159,24 @@ TEST(s_expr, iterate) {
     }
 }
 
+TEST(s_expr, get) {
+    using namespace std::string_literals;
+    using namespace arb::s_expr_literals;
+
+    // Both integer and real can be cast to double.
+    EXPECT_EQ(42., get<double>(s_expr{42.}));
+    EXPECT_EQ(42., get<double>(s_expr{42}));
+
+    EXPECT_EQ(42, get<int>(s_expr{42}));
+
+    EXPECT_EQ("hello world"s, get<std::string>(s_expr{"hello world"}));
+    EXPECT_EQ("a-b-c"_symbol, get<symbol>(s_expr{"a-b-c"_symbol}));
+
+    EXPECT_THROW(get<int>(s_expr{42.2}), arb::bad_s_expr_get);
+    EXPECT_THROW(get<int>(s_expr{"folly"}), arb::bad_s_expr_get);
+    EXPECT_THROW(get<symbol>(s_expr{"folly"}), arb::bad_s_expr_get);
+}
+
 template <typename L>
 std::string round_trip_label(const char* in) {
     if (auto x = parse_label_expression(in)) {

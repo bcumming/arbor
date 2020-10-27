@@ -18,6 +18,8 @@ label_parse_error::label_parse_error(const std::string& msg):
     arb::arbor_exception(msg)
 {}
 
+namespace {
+
 struct nil_tag {};
 
 template <typename T>
@@ -142,15 +144,19 @@ struct evaluator {
     using eval_fn = std::function<std::any(any_vec)>;
     using args_fn = std::function<bool(const any_vec&)>;
 
-    eval_fn eval;
+    eval_fn function;
     args_fn match_args;
     const char* message;
 
     evaluator(eval_fn f, args_fn a, const char* m):
-        eval(std::move(f)),
+        function(std::move(f)),
         match_args(std::move(a)),
         message(m)
     {}
+
+    std::any operator()(const any_vec& args) {
+        return function(args);
+    }
 };
 
 template <typename... Args>
@@ -180,6 +186,8 @@ struct make_fold {
         return state;
     }
 };
+
+} // end anonymous namespace
 
 std::unordered_multimap<std::string, evaluator> eval_map {
     // Functions that return regions
@@ -257,7 +265,6 @@ std::unordered_multimap<std::string, evaluator> eval_map {
 parse_hopefully<std::any> eval(const s_expr& e);
 
 parse_hopefully<std::vector<std::any>> eval_args(const s_expr& e) {
-    if (!e) return {std::vector<std::any>{}}; // empty argument list
     std::vector<std::any> args;
     for (auto& h: e) {
         if (auto arg=eval(h)) {
@@ -360,7 +367,7 @@ parse_hopefully<std::any> eval(const s_expr& e) {
         // Search for a candidate that matches the argument list.
         for (auto i=matches.first; i!=matches.second; ++i) {
             if (i->second.match_args(*args)) { // found a match: evaluate and return.
-                return i->second.eval(*args);
+                return i->second(*args);
             }
         }
 

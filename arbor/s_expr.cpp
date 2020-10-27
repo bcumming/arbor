@@ -353,19 +353,19 @@ const token& s_expr::atom() const {
 }
 
 const s_expr& s_expr::head() const {
-    return std::get<1>(state).head.get();
+    return std::get<1>(state).car.get();
 }
 
 const s_expr& s_expr::tail() const {
-    return std::get<1>(state).tail.get();
+    return std::get<1>(state).cdr.get();
 }
 
 s_expr& s_expr::head() {
-    return std::get<1>(state).head.get();
+    return std::get<1>(state).car.get();
 }
 
 s_expr& s_expr::tail() {
-    return std::get<1>(state).tail.get();
+    return std::get<1>(state).cdr.get();
 }
 
 s_expr::operator bool() const {
@@ -539,5 +539,36 @@ std::vector<s_expr> parse_multi_s_expr(transmogrifier begin) {
     return result;
 }
 
+template <>
+double get<double>(const s_expr& e) {
+    if (e.is_atom() && (e.atom().kind==tok::real || e.atom().kind==tok::integer)) {
+        return std::stod(e.atom().spelling);
+    }
+    throw bad_s_expr_get("unable to cast to double");
+}
+
+template <>
+int get<int>(const s_expr& e) {
+    if (e.is_atom() && e.atom().kind==tok::integer) {
+        return std::stoi(e.atom().spelling);
+    }
+    throw bad_s_expr_get("unable to cast to int");
+}
+
+template <>
+std::string get<std::string>(const s_expr& e) {
+    if (e.is_atom() && e.atom().kind==tok::string) {
+        return e.atom().spelling;
+    }
+    throw bad_s_expr_get("unable to cast to string");
+}
+
+template <>
+symbol get<symbol>(const s_expr& e) {
+    if (e.is_atom() && e.atom().kind==tok::symbol) {
+        return {e.atom().spelling};
+    }
+    throw bad_s_expr_get("unable to cast to symbol");
+}
 
 } // namespace arb

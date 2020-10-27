@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arbor/arbexcept.hpp"
 #include <iostream>
 
 #include <cstddef>
@@ -177,15 +178,15 @@ token nil_token(src_location l={}) {
     return token{l, tok::nil, "()"};
 }
 
-struct symbol_proxy {
-    std::string s;
-    operator std::string() const {
-        return s;
-    }
+struct symbol {
+    std::string str;
+    operator std::string() const { return str; }
+    bool friend operator< (const symbol& lhs, const symbol& rhs) { return lhs.str<rhs.str; }
+    bool friend operator==(const symbol& lhs, const symbol& rhs) { return lhs.str==rhs.str; }
 };
 
 namespace s_expr_literals {
-    inline symbol_proxy operator "" _symbol(const char* chars, size_t size) {
+    inline symbol operator "" _symbol(const char* chars, size_t size) {
         return {chars};
     }
 }
@@ -193,9 +194,9 @@ namespace s_expr_literals {
 struct s_expr {
     template <typename U>
     struct s_pair {
-        U head = U();
-        U tail = U();
-        s_pair(U l, U r): head(std::move(l)), tail(std::move(r)) {}
+        U car = U();
+        U cdr = U();
+        s_pair(U l, U r): car(std::move(l)), cdr(std::move(r)) {}
     };
 
     // This value_wrapper is used to wrap the shared pointer
@@ -333,7 +334,7 @@ struct s_expr {
     //      1. an atom
     //      2. a pair of s_expr (head and tail)
     // The s_expr uses a util::variant to represent these two possible states,
-    // which requires using an incomplete definition of s_expr, requiring
+    // which requires using an incomplete definition of s_expr, requiring wrapping
     // with a std::unique_ptr via value_wrapper.
 
     using pair_type = s_pair<value_wrapper<s_expr>>;
@@ -354,7 +355,7 @@ struct s_expr {
         s_expr(token{{0,0}, tok::real, std::to_string(x)}) {}
     s_expr(int x):
         s_expr(token{{0,0}, tok::integer, std::to_string(x)}) {}
-    s_expr(symbol_proxy s):
+    s_expr(symbol s):
         s_expr(token{{0,0}, tok::symbol, s}) {}
 
     bool is_atom() const;
@@ -378,6 +379,20 @@ struct s_expr {
     friend std::ostream& operator<<(std::ostream& o, const s_expr& x);
 };
 
+struct bad_s_expr_get: arbor_exception {
+    bad_s_expr_get(const std::string& msg):
+        arbor_exception("bad_s_expr_get: "+msg)
+    {}
+};
+
+template <typename T>
+T get(const s_expr&) {
+    throw bad_s_expr_get("no cast to type possible");
+}
+
+template <>
+double get<double>(const s_expr& e);
+
 // Helper function for programatically building lists
 //
 //   slist(1, 2, "hello world", "banjax@cat/3"_symbol);
@@ -394,30 +409,14 @@ struct s_expr {
 //
 //   (1 (2 3) 4 5)
 
-namespace impl {
-    template <typename T>
-    void slist(s_expr* n, T v) {
-        *n = s_expr(v, {});
-    }
-
-    template <typename T, typename... Args>
-    void slist(s_expr* n, T v, Args... args) {
-        *n = s_expr{v, {}};
-        slist(&n->tail(), args...);
-        return;
-    }
+template <typename T>
+s_expr slist(T v) {
+    return {v, {}};
 }
 
 template <typename T, typename... Args>
 s_expr slist(T v, Args... args) {
-    s_expr e{v, {}};
-    impl::slist(&e.tail(), args...);
-    return e;
-}
-
-template <typename T>
-s_expr slist(T v) {
-    return {v, {}};
+    return {v, slist(args...)};
 }
 
 inline
@@ -425,15 +424,15 @@ s_expr slist() {
     return {};
 }
 
+template <typename I, typename S>
+s_expr slist_range(I b, S e) {
+    return b==e ? s_expr{}
+                : s_expr{*b, slist_range(++b,e)};
+}
+
 template <typename Range>
 s_expr slist_range(const Range& range) {
-    s_expr lst = slist();
-    s_expr* n = &lst;
-    for (const auto& x: range) {
-        *n = s_expr{x, {}};
-        n = &n->tail();
-    }
-    return lst;
+    return slist_range(std::begin(range), std::end(range));
 }
 
 std::size_t length(const s_expr& l);

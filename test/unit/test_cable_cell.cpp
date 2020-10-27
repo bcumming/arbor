@@ -6,6 +6,7 @@
 #include <arbor/cable_cell.hpp>
 #include <arbor/cable_cell_param.hpp>
 #include <arbor/morph/io.hpp>
+#include <sstream>
 
 using namespace arb;
 
@@ -43,6 +44,11 @@ TEST(cable_cell, decor) {
     write_s_expr(std::cout, c2) << "\n==============================================\n";
     c2.decorate(c.decorations());
     write_s_expr(std::cout, c2) << "\n==============================================\n";
+
+    std::stringstream s;
+    write_s_expr(s, c2);
+    auto S = parse_s_expr(s.str());
+    std::cout << S << "\n";
 }
 
 TEST(cable_cell, printer) {
