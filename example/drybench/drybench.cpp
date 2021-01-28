@@ -90,7 +90,7 @@ public:
         return cell_kind::benchmark;
     }
 
-    arb::util::any get_global_properties(arb::cell_kind) const override {
+    std::any get_global_properties(arb::cell_kind) const override {
         arb::cable_cell_global_properties gprop;
         gprop.default_parameters = arb::neuron_parameter_defaults;
         return gprop;
@@ -121,7 +121,6 @@ public:
         }
 
         return conns;
-        //return {arb::cell_connection({src, 0}, {gid, 0}, 0, params_.min_delay)};
     }
 
     // Return an event generator on every 20th gid. This function needs to generate events
@@ -133,11 +132,6 @@ public:
             gens.push_back(arb::explicit_generator(arb::pse_vector{{{gid, 0}, 0.1, 1.0}}));
         }
         return gens;
-    }
-
-    // There is one probe (for measuring voltage at the soma) on the cell.
-    cell_size_type num_probes(cell_gid_type gid)  const override {
-        return 0;
     }
 
 private:
@@ -231,7 +225,7 @@ run_params read_options(int argc, char** argv) {
     }
 
     nlohmann::json json;
-    json << f;
+    f >> json;
 
     param_from_json(params.name, "name", json);
     param_from_json(params.num_cells_per_rank, "num-cells-per-rank", json);
