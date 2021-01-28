@@ -1,5 +1,7 @@
 #include "../gtest.h"
 
+#include <arbor/arbexcept.hpp>
+#include <arbor/cable_cell.hpp>
 #include <arbor/domain_decomposition.hpp>
 #include <arbor/lif_cell.hpp>
 #include <arbor/load_balance.hpp>
@@ -72,15 +74,6 @@ public:
     cell_size_type num_targets(cell_gid_type) const override {
         return 1;
     }
-    cell_size_type num_probes(cell_gid_type) const override {
-        return 0;
-    }
-    probe_info get_probe(cell_member_type probe_id) const override {
-        return {};
-    }
-    std::vector<event_generator> event_generators(cell_gid_type) const override {
-        return {};
-    }
 
 private:
     cell_size_type n_lif_cells_;
@@ -125,20 +118,45 @@ public:
     cell_size_type num_targets(cell_gid_type) const override {
         return 1;
     }
-    cell_size_type num_probes(cell_gid_type) const override {
-        return 0;
-    }
-    probe_info get_probe(cell_member_type probe_id) const override {
-        return {};
-    }
-    std::vector<event_generator> event_generators(cell_gid_type) const override {
-        return {};
-    }
 
 private:
     cell_size_type ncells_;
     float weight_, delay_;
 };
+
+// LIF cell with probe
+class probe_recipe: public arb::recipe {
+public:
+    probe_recipe() {}
+
+    cell_size_type num_cells() const override {
+        return 1;
+    }
+    cell_kind get_cell_kind(cell_gid_type gid) const override {
+        return cell_kind::lif;
+    }
+    std::vector<cell_connection> connections_on(cell_gid_type gid) const override {
+        return {};
+    }
+    util::unique_any get_cell_description(cell_gid_type gid) const override {
+        return lif_cell();
+    }
+    cell_size_type num_sources(cell_gid_type) const override {
+        return 1;
+    }
+    cell_size_type num_targets(cell_gid_type) const override {
+        return 1;
+    }
+    std::vector<probe_info> get_probes(cell_gid_type gid) const override{
+        return {arb::cable_probe_membrane_voltage{mlocation{0, 0}}};
+    }
+};
+TEST(lif_cell_group, throw) {
+    probe_recipe rec;
+    auto context = make_context();
+    auto decomp = partition_load_balance(rec, context);
+    EXPECT_THROW(simulation(rec, decomp, context), bad_cell_probe);
+}
 
 TEST(lif_cell_group, recipe)
 {

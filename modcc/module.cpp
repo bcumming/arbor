@@ -298,6 +298,11 @@ bool Module::semantic() {
             if (solve_proc->kind() == procedureKind::linear) {
                 solver = std::make_unique<LinearSolverVisitor>(state_vars);
                 auto rewrite_body = linear_rewrite(solve_proc->body(), state_vars);
+                if (!rewrite_body) {
+                    error("An error occured while compiling the LINEAR block. "
+                          "Check whether the statements are in fact linear.");
+                    return false;
+                }
 
                 rewrite_body->semantic(nrn_init_scope);
                 rewrite_body->accept(solver.get());
@@ -460,13 +465,8 @@ bool Module::semantic() {
             }
         }
 
-        // handle the case where there is no SOLVE in BREAKPOINT
-        if(!found_solve) {
-            warning(" there is no SOLVE statement, required to update the"
-                    " state variables, in the BREAKPOINT block",
-                    breakpoint->location());
-        }
-        else {
+        // handle the case where there is a SOLVE in BREAKPOINT (which is the typical case)
+        if (found_solve) {
             // Redo semantic pass in order to elimate any removed local symbols.
             api_state->semantic(symbols_);
         }
@@ -514,6 +514,10 @@ bool Module::semantic() {
                 if (s->is_assignment()) {
                     for (const auto &id: state_vars) {
                         auto coef = symbolic_pdiff(s->is_assignment()->rhs(), id);
+                        if(!coef) {
+                            linear = false;
+                            continue;
+                        }
                         if(coef->is_number()) {
                             if (!s->is_assignment()->lhs()->is_identifier()) {
                                 error(pprintf("Left hand side of assignment is not an identifier"));
@@ -598,14 +602,17 @@ void Module::add_variables_to_symbols() {
             continue;
         }
 
-        // Special case: 'celsius' is an external indexed-variable with a special
-        // data source. Retrieval of value is handled especially by printers.
+        // Special cases: 'celsius', 'diam' and 't' are external indexed-variables with special
+        // data sources. Retrieval of their values is handled especially by printers.
 
         if (id.name() == "celsius") {
             create_indexed_variable("celsius", sourceKind::temperature, accessKind::read, "", Location());
         }
         else if (id.name() == "diam") {
             create_indexed_variable("diam", sourceKind::diameter, accessKind::read, "", Location());
+        }
+        else if (id.name() == "t") {
+            create_indexed_variable("t", sourceKind::time, accessKind::read, "", Location());
         }
         else {
             // Parameters are scalar by default, but may later be changed to range.
@@ -619,7 +626,7 @@ void Module::add_variables_to_symbols() {
         }
     }
 
-    // Remove `celsius` and `diam` from the parameter block, as they are not true parameters anymore.
+    // Remove `celsius`, `diam` and `t` from the parameter block, as they are not true parameters anymore.
     parameter_block_.parameters.erase(
         std::remove_if(parameter_block_.begin(), parameter_block_.end(),
             [](const Id& id) { return id.name() == "celsius"; }),
@@ -629,6 +636,12 @@ void Module::add_variables_to_symbols() {
     parameter_block_.parameters.erase(
         std::remove_if(parameter_block_.begin(), parameter_block_.end(),
             [](const Id& id) { return id.name() == "diam"; }),
+        parameter_block_.end()
+    );
+
+    parameter_block_.parameters.erase(
+        std::remove_if(parameter_block_.begin(), parameter_block_.end(),
+            [](const Id& id) { return id.name() == "t"; }),
         parameter_block_.end()
     );
 

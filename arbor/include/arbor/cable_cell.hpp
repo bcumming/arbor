@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <arbor/arbexcept.hpp>
@@ -15,6 +16,7 @@
 #include <arbor/morph/mprovider.hpp>
 #include <arbor/morph/morphology.hpp>
 #include <arbor/morph/primitives.hpp>
+#include <arbor/util/hash_def.hpp>
 #include <arbor/util/typed_map.hpp>
 
 namespace arb {
@@ -44,7 +46,7 @@ using cable_sample_range = std::pair<const double*, const double*>;
 // Sampler functions receive an `any_ptr` to sampled data. The underlying pointer
 // type is a const pointer to:
 //     * `double` for scalar data;
-//     * `cable_sample_rang*` for vector data (see definition above).
+//     * `cable_sample_range*` for vector data (see definition above).
 //
 // The metadata associated with a probe is also passed to a sampler via an `any_ptr`;
 // the underlying pointer will be a const pointer to one of the following metadata types:
@@ -52,7 +54,10 @@ using cable_sample_range = std::pair<const double*, const double*>;
 //     * `cable_probe_point_info` for point mechanism state queries;
 //     * `mcable_list` for most vector queries;
 //     * `std::vector<cable_probe_point_info>` for cell-wide point mechanism state queries.
-
+//
+// Scalar probes which are described by a locset expression will generate multiple
+// calls to an attached sampler, one per valid location matched by the expression.
+//
 // Metadata for point process probes.
 struct cable_probe_point_info {
     cell_lid_type target;   // Target number of point process instance on cell.
@@ -64,7 +69,7 @@ struct cable_probe_point_info {
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_membrane_voltage {
-    mlocation location;
+    locset locations;
 };
 
 // Voltage estimate [mV], reported against each cable in each control volume. Not interpolated.
@@ -76,22 +81,22 @@ struct cable_probe_membrane_voltage_cell {};
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_axial_current {
-    mlocation location;
+    locset locations;
 };
 
 // Total current density [A/m²] across membrane _excluding_ capacitive current at `location`.
 // Sample value type: `cable_sample_range`
 // Sample metadata type: `mlocation`
 struct cable_probe_total_ion_current_density {
-    mlocation location;
+    locset locations;
 };
 
-// Total ionic current [nA] across membrance _excluding_ capacitive current across components of the cell.
+// Total ionic current [nA] across membrane _excluding_ capacitive current across components of the cell.
 // Sample value type: `cable_sample_range`
 // Sample metadata type: `mcable_list`
 struct cable_probe_total_ion_current_cell {};
 
-// Total membrance current [nA] across components of the cell.
+// Total membrane current [nA] across components of the cell.
 // Sample value type: `cable_sample_range`
 // Sample metadata type: `mcable_list`
 struct cable_probe_total_current_cell {};
@@ -100,7 +105,7 @@ struct cable_probe_total_current_cell {};
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_density_state {
-    mlocation location;
+    locset locations;
     std::string mechanism;
     std::string state;
 };
@@ -135,7 +140,7 @@ struct cable_probe_point_state_cell {
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_ion_current_density {
-    mlocation location;
+    locset locations;
     std::string ion;
 };
 
@@ -150,7 +155,7 @@ struct cable_probe_ion_current_cell {
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_ion_int_concentration {
-    mlocation location;
+    locset locations;
     std::string ion;
 };
 
@@ -165,7 +170,7 @@ struct cable_probe_ion_int_concentration_cell {
 // Sample value type: `double`
 // Sample metadata type: `mlocation`
 struct cable_probe_ion_ext_concentration {
-    mlocation location;
+    locset locations;
     std::string ion;
 };
 
@@ -179,6 +184,7 @@ struct cable_probe_ion_ext_concentration_cell {
 // Forward declare the implementation, for PIMPL.
 struct cable_cell_impl;
 
+
 // Typed maps for access to painted and placed assignments:
 //
 // Mechanisms and initial ion data are further keyed by
@@ -187,7 +193,8 @@ struct cable_cell_impl;
 template <typename T>
 using region_assignment =
     std::conditional_t<
-        std::is_same<T, mechanism_desc>::value || std::is_same<T, initial_ion_data>::value,
+        std::is_same<T, mechanism_desc>::value || std::is_same<T, init_int_concentration>::value ||
+        std::is_same<T, init_ext_concentration>::value || std::is_same<T, init_reversal_potential>::value,
         std::unordered_map<std::string, mcable_map<T>>,
         mcable_map<T>>;
 
@@ -211,7 +218,8 @@ using location_assignment =
 
 using cable_cell_region_map = static_typed_map<region_assignment,
     mechanism_desc, init_membrane_potential, axial_resistivity,
-    temperature_K, membrane_capacitance, initial_ion_data>;
+    temperature_K, membrane_capacitance, init_int_concentration,
+    init_ext_concentration, init_reversal_potential>;
 
 using cable_cell_location_map = static_typed_map<location_assignment,
     mechanism_desc, i_clamp, gap_junction_site, threshold_detector>;
@@ -222,11 +230,8 @@ public:
     using index_type = cell_lid_type;
     using size_type = cell_local_size_type;
     using value_type = double;
-    using point_type = point<value_type>;
 
     using gap_junction_instance = mlocation;
-
-    cable_cell_parameter_set default_parameters;
 
     // Default constructor.
     cable_cell();
@@ -235,72 +240,22 @@ public:
     cable_cell(const cable_cell& other);
     cable_cell(cable_cell&& other) = default;
 
-    // Copy and move assignment operators..
+    // Copy and move assignment operators.
     cable_cell& operator=(cable_cell&&) = default;
     cable_cell& operator=(const cable_cell& other) {
         return *this = cable_cell(other);
     }
 
-    /// construct from morphology
-    cable_cell(const class morphology& m, const label_dict& dictionary={});
+    /// Construct from morphology, label and decoration descriptions.
+    cable_cell(const class morphology&, const label_dict&, const decor&);
+    cable_cell(const class morphology& m):
+        cable_cell(m, {}, {})
+    {}
 
     /// Access to morphology and embedding
     const concrete_embedding& embedding() const;
     const arb::morphology& morphology() const;
     const mprovider& provider() const;
-
-    // Set cell-wide default physical and ion parameters.
-
-    void set_default(init_membrane_potential prop) {
-        default_parameters.init_membrane_potential = prop.value;
-    }
-
-    void set_default(axial_resistivity prop) {
-        default_parameters.axial_resistivity = prop.value;
-    }
-
-    void set_default(temperature_K prop) {
-        default_parameters.temperature_K = prop.value;
-    }
-
-    void set_default(membrane_capacitance prop) {
-        default_parameters.membrane_capacitance = prop.value;
-    }
-
-    void set_default(initial_ion_data prop) {
-        default_parameters.ion_data[prop.ion] = prop.initial;
-    }
-
-    void set_default(ion_reversal_potential_method prop) {
-        default_parameters.reversal_potential_method[prop.ion] = prop.method;
-    }
-
-    // Painters and placers.
-    //
-    // Used to describe regions and locations where density channels, stimuli,
-    // synapses, gap juncitons and detectors are located.
-
-    // Density channels.
-    void paint(const region&, mechanism_desc);
-
-    // Properties.
-    void paint(const region&, init_membrane_potential);
-    void paint(const region&, axial_resistivity);
-    void paint(const region&, temperature_K);
-    void paint(const region&, membrane_capacitance);
-    void paint(const region&, initial_ion_data);
-
-    // Synapses.
-    lid_range place(const locset&, mechanism_desc);
-
-    // Stimuli.
-    lid_range place(const locset&, i_clamp);
-
-    // Gap junctions.
-    lid_range place(const locset&, gap_junction_site);
-
-    // Spike detectors.
-    lid_range place(const locset&, threshold_detector);
 
     // Convenience access to placed items.
 
@@ -330,8 +285,20 @@ public:
     const cable_cell_region_map& region_assignments() const;
     const cable_cell_location_map& location_assignments() const;
 
+    // The decorations on the cell.
+    const decor& decorations() const;
+
+    // The default parameter and ion settings on the cell.
+    const cable_cell_parameter_set& default_parameters() const;
+
+    // The range of lids assigned to the items with placement index idx, where
+    // the placement index is the value returned by calling decor::place().
+    lid_range placed_lid_range(unsigned idx) const;
+
 private:
     std::unique_ptr<cable_cell_impl, void (*)(cable_cell_impl*)> impl_;
 };
 
 } // namespace arb
+
+ARB_DEFINE_HASH(arb::cable_probe_point_info, a.target, a.multiplicity, a.loc);

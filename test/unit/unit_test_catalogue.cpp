@@ -11,6 +11,7 @@
 #include "mechanisms/celsius_test.hpp"
 #include "mechanisms/diam_test.hpp"
 #include "mechanisms/param_as_state.hpp"
+#include "mechanisms/non_linear.hpp"
 #include "mechanisms/test0_kin_diff.hpp"
 #include "mechanisms/test_linear_state.hpp"
 #include "mechanisms/test_linear_init.hpp"
@@ -36,6 +37,9 @@
 #include "mechanisms/write_eX.hpp"
 #include "mechanisms/read_cai_init.hpp"
 #include "mechanisms/write_cai_breakpoint.hpp"
+#include "mechanisms/test_ca.hpp"
+#include "mechanisms/test_kin1.hpp"
+#include "mechanisms/test_kinlva.hpp"
 
 #include "../gtest.h"
 
@@ -55,6 +59,9 @@ using namespace arb;
 mechanism_catalogue make_unit_test_catalogue(const mechanism_catalogue& from) {
     mechanism_catalogue cat(from);
 
+    ADD_MECH(cat, test_ca)
+    ADD_MECH(cat, test_kin1)
+    ADD_MECH(cat, test_kinlva)
     ADD_MECH(cat, ca_linear)
     ADD_MECH(cat, celsius_test)
     ADD_MECH(cat, diam_test)
@@ -74,6 +81,7 @@ mechanism_catalogue make_unit_test_catalogue(const mechanism_catalogue& from) {
     ADD_MECH(cat, test1_kin_compartment)
     ADD_MECH(cat, test4_kin_compartment)
     ADD_MECH(cat, fixed_ica_current)
+    ADD_MECH(cat, non_linear)
     ADD_MECH(cat, point_ica_current)
     ADD_MECH(cat, linear_ca_conc)
     ADD_MECH(cat, test_cl_valence)

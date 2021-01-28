@@ -15,6 +15,7 @@ set(arbor_sources
     cable_cell_param.cpp
     cell_group_factory.cpp
     common_types_io.cpp
+    cv_policy.cpp
     execution_context.cpp
     gpu_context.cpp
     event_binner.cpp
@@ -31,14 +32,16 @@ set(arbor_sources
     memory/util.cpp
     morph/embed_pwlin.cpp
     morph/label_dict.cpp
+    morph/label_parse.cpp
     morph/locset.cpp
-    morph/mbranch.cpp
     morph/morphexcept.cpp
     morph/morphology.cpp
     morph/mprovider.cpp
+    morph/place_pwlin.cpp
     morph/primitives.cpp
     morph/region.cpp
-    morph/sample_tree.cpp
+    morph/segment_tree.cpp
+    morph/stitch.cpp
     merge_events.cpp
     simulation.cpp
     partition_load_balance.cpp
@@ -50,7 +53,8 @@ set(arbor_sources
     schedule.cpp
     spike_event_io.cpp
     spike_source_cell_group.cpp
-    swcio.cpp
+    s_expr.cpp
+    symmetric_recipe.cpp
     threading/threading.cpp
     thread_private_spike_store.cpp
     tree.cpp

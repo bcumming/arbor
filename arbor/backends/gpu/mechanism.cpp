@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -10,7 +11,6 @@
 #include <arbor/fvm_types.hpp>
 #include <arbor/math.hpp>
 #include <arbor/mechanism.hpp>
-#include <arbor/util/optional.hpp>
 
 #include "memory/memory.hpp"
 #include "util/index_into.hpp"
@@ -25,8 +25,9 @@ namespace arb {
 namespace gpu {
 
 using memory::make_const_view;
-using util::value_by_key;
 using util::make_span;
+using util::ptr_by_key;
+using util::value_by_key;
 
 template <typename T>
 memory::device_view<T> device_view(T* ptr, std::size_t n) {
@@ -84,8 +85,6 @@ void mechanism::instantiate(unsigned id,
     pp->width_ = width_;
 
     pp->vec_ci_   = shared.cv_to_intdom.data();
-    pp->vec_t_    = shared.time.data();
-    pp->vec_t_to_ = shared.time_to.data();
     pp->vec_dt_   = shared.dt_cv.data();
 
     pp->vec_v_    = shared.voltage.data();
@@ -101,7 +100,7 @@ void mechanism::instantiate(unsigned id,
     for (auto i: ion_state_tbl) {
         auto ion_binding = value_by_key(overrides.ion_rebind, i.first).value_or(i.first);
 
-        util::optional<ion_state&> oion = value_by_key(shared.ion_data, ion_binding);
+        ion_state* oion = ptr_by_key(shared.ion_data, ion_binding);
         if (!oion) {
             throw arbor_internal_error("gpu/mechanism: mechanism holds ion with no corresponding shared state");
         }
@@ -115,6 +114,8 @@ void mechanism::instantiate(unsigned id,
     }
 
     event_stream_ptr_ = &shared.deliverable_events;
+    vec_t_ptr_    = &shared.time;
+    vec_t_to_ptr_ = &shared.time_to;
 
     // If there are no sites (is this ever meaningful?) there is nothing more to do.
     if (width_==0) {
@@ -156,7 +157,8 @@ void mechanism::instantiate(unsigned id,
     for (auto i: make_span(0, num_ions_)) {
         auto ion_binding = value_by_key(overrides.ion_rebind, ion_index_tbl[i].first).value_or(ion_index_tbl[i].first);
 
-        util::optional<ion_state&> oion = value_by_key(shared.ion_data, ion_binding);
+        ion_state* oion = ptr_by_key(shared.ion_data, ion_binding);
+
         if (!oion) {
             throw arbor_internal_error("gpu/mechanism: mechanism holds ion with no corresponding shared state");
         }
@@ -206,8 +208,10 @@ fvm_value_type* mechanism::field_data(const std::string& field_var) {
 void multiply_in_place(fvm_value_type* s, const fvm_index_type* p, int n);
 
 void mechanism::initialize() {
-    nrn_init();
     mechanism_ppack_base* pp = ppack_ptr();
+    pp->vec_t_ = vec_t_ptr_->data();
+
+    nrn_init();
     auto states = state_table();
 
     if(mult_in_place_) {

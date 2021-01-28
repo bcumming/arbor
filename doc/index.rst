@@ -4,55 +4,33 @@ Arbor
 .. image:: https://travis-ci.org/arbor-sim/arbor.svg?branch=master
     :target: https://travis-ci.org/arbor-sim/arbor
 
+Welcome to the documentation for Arbor, the multi-compartment neural network simulation library.
+
+You can find out how to :ref:`get Arbor<in_install>`; get started quickly with our :ref:`tutorials<tutorial>`; or continue reading to learn more about Arbor.
+
 What is Arbor?
 --------------
 
-Arbor is a high-performance library for computational neuroscience simulations.
+Arbor is a high-performance library for computational neuroscience simulations with multi-compartment, morphologically-detailed cells,
+from single cell models to very large networks. Arbor is written from the ground up with many-cpu and gpu architectures in mind, to
+help neuroscientists effectively use contemporary and future HPC systems to meet their simulation needs.
 
-The development team is from from high-performance computing (HPC) centers:
+Arbor supports NVIDIA and AMD GPUs as well as explicit vectorization on CPUs from Intel (AVX, AVX2 and AVX512) and ARM (Neon and SVE).
+When coupled with low memory overheads, this makes Arbor an order of magnitude faster than the most widely-used comparable simulation software.
 
-    * Swiss National Supercomputing Center (CSCS), Jülich and BSC in work package 7.5.4 of the HBP.
-    * Aim to prepare neuroscience users for new HPC architectures;
+Arbor is open source and openly developed, and we use development practices such as unit testing, continuous integration, and validation.
 
-Arbor is designed from the ground up for **many core**  architectures:
+Documentation organisation
+--------------------------
 
-    * Written in C++11 and CUDA;
-    * Distributed parallelism using MPI;
-    * Multithreading with TBB and C++11 threads;
-    * **Open source** and **open development**;
-    * Sound development practices: **unit testing**, **continuous Integration**,
-      and **validation**.
-
-Features
---------
-
-We are actively developing `Arbor <https://github.com/arbor-sim/arbor>`_, improving performance and adding features.
-Some key features include:
-
-    * Optimized back end for CUDA
-    * Optimized vector back ends for Intel (KNL, AVX, AVX2) and Arm (ARMv8-A NEON) intrinsics.
-    * Asynchronous spike exchange that overlaps compute and communication.
-    * Efficient sampling of voltage and current on all back ends.
-    * Efficient implementation of all features on GPU.
-    * Reporting of memory and energy consumption (when available on platform).
-    * An API for addition of new cell types, e.g. LIF and Poisson spike generators.
-    * Validation tests against numeric/analytic models and NEURON.
+* :ref:`tutorial` contains a few ready-made examples you can use to quickly get started using Arbor. In the tutorial descriptions we link to the relevant Arbor concepts.
+* :ref:`modelintro` describes the design and concepts used in Arbor. The breakdown of concepts is mirrored (as much as possible) in the :ref:`pyoverview` and :ref:`cppoverview`, so you can easily switch between languages and concepts.
+* :ref:`hpc-overview` details Arbor-features for distribution of computation over supercomputer nodes.
+* :ref:`internals-overview` describes Arbor code that is not user-facing; convenience classes, architecture abstractions, etc.
+* Contributions to Arbor are very welcome! Under :ref:`contribindex` describe conventions and procedures for all kinds of contributions.
 
 Citing Arbor
 ------------
-
-.. |DOI-v0.1| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.1459679.svg
-     :target: https://doi.org/10.5281/zenodo.1459679
-
-.. |DOI-v0.2| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.2583709.svg
-    :target: https://doi.org/10.5281/zenodo.2583709
-
-Specific versions of Arbor can be cited via Zenodo:
-
-   * v0.2:  |DOI-v0.2|
-   * v0.1:  |DOI-v0.1|
-
-The following BibTeX can be used to cite Arbor:
 
 .. code-block:: latex
 
@@ -68,53 +46,34 @@ The following BibTeX can be used to cite Arbor:
 
 Alternative citation formats for the paper can be `downloaded here <https://ieeexplore.ieee.org/abstract/document/8671560>`_, and a preprint is available at `arXiv <https://arxiv.org/abs/1901.07454>`_.
 
-.. toctree::
-   :caption: Getting Stared:
+Acknowledgements
+----------------
 
-   install
-   python
-   single_cell
+This research has received funding from th  European Unions Horizon 2020 Framework Programme for Research and
+Innovation under the Specific Grant Agreement No. 720270 (Human Brain Project SGA1), and Specific Grant Agreement
+No. 785907 (Human Brain Project SGA2).
 
-.. toctree::
-   :caption: Arbor Models:
-
-   model_intro
-   model_concepts
-   model_hardware
-   model_recipe
-   model_domdec
-   model_simulation
+Arbor is an `eBrains project <https://ebrains.eu/service/arbor/>`_.
 
 .. toctree::
-   :caption: Python:
-   
-   py_intro
-   py_common
-   py_recipe
-   py_cable_cell
-   py_hardware
-   py_domdec
-   py_simulation
-   py_profiler
+   :caption: Arbor documentation:
+   :maxdepth: 1
+
+   install/index
+   tutorial/index
+   concepts/index
+   python/index
+   cpp/index
+   hpc/index
+   internals/index
 
 .. toctree::
-   :caption: C++ API:
+   :caption: Contributing:
+   :maxdepth: 1
 
-   cpp_intro
-   cpp_common
-   cpp_hardware
-   cpp_recipe
-   cpp_domdec
-   cpp_simulation
-   cpp_cable_cell
-
-.. toctree::
-   :caption: Developers:
-
-   library
-   simd_api
-   profiler
-   sampling_api
-   cpp_distributed_context
-   cpp_dry_run
-
+   contrib/index
+   contrib/pr
+   contrib/coding-style
+   contrib/doc
+   contrib/example
+   contrib/test

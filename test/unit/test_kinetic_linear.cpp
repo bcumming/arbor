@@ -13,7 +13,6 @@
 #include "mech_private_field_access.hpp"
 #include "fvm_lowered_cell.hpp"
 #include "fvm_lowered_cell_impl.hpp"
-#include "sampler_map.hpp"
 #include "simple_recipes.hpp"
 #include "unit_test_catalogue.hpp"
 
@@ -79,7 +78,7 @@ void run_test(std::string mech_name,
     shared_state->update_time_to(dt, dt);
     shared_state->set_dt();
 
-    test->nrn_state();
+    test->update_state();
 
     if (!t1_values.empty()) {
         for (unsigned i = 0; i < state_variables.size(); i++) {

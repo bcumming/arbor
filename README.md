@@ -6,13 +6,14 @@ Arbor is a library for implementing performance portable network simulations of 
 
 An installation guide and library documentation are available online at [Read the Docs](http://arbor.readthedocs.io/en/latest/).
 
-[Submit a ticket](https://github.com/arbor-sim/arbor) if you have any questions or want help.
+[Submit a ticket or start a discussion](https://github.com/arbor-sim/arbor) if you have any questions or want help.
 
 ### Citing Arbor
 
 The Arbor software can be cited via Zenodo: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1459678.svg)](https://doi.org/10.5281/zenodo.1459678).
 
 Previous versions of Arbor can be cited specifically:
+* Version 0.5: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4428108.svg)](https://doi.org/10.5281/zenodo.4428108)
 * Version 0.2: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.2583709.svg)](https://doi.org/10.5281/zenodo.2583709)
 * Version 0.1: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1459679.svg)](https://doi.org/10.5281/zenodo.1459679)
 

@@ -62,6 +62,18 @@ public:
         // Delegate to derived class, passing in event queue state.
         deliver_events(event_stream_ptr_->marked_events());
     }
+    void update_current() override {
+        vec_t_ = vec_t_ptr_->data();
+        nrn_current();
+    }
+    void update_state() override {
+        vec_t_ = vec_t_ptr_->data();
+        nrn_state();
+    }
+    void update_ions() override {
+        vec_t_ = vec_t_ptr_->data();
+        write_ions();
+    }
 
     void set_parameter(const std::string& key, const std::vector<fvm_value_type>& values) override;
 
@@ -84,6 +96,9 @@ protected:
     value_type* vec_g_;           // CV to cell membrane conductivity.
     const value_type* temperature_degC_; // CV to temperature.
     const value_type* diam_um_;   // CV to diameter.
+
+    const array* vec_t_ptr_;
+    const array* vec_t_to_ptr_;
     deliverable_event_stream* event_stream_ptr_;
 
     // Per-mechanism index and weight data, excepting ion indices.
@@ -137,13 +152,20 @@ protected:
     virtual mechanism_ion_state_table ion_state_table() { return {}; }
     virtual mechanism_ion_index_table ion_index_table() { return {}; }
 
+    // Simd width used in mechanism.
+
+    virtual unsigned simd_width() const { return 1; }
+
     // Report raw size in bytes of mechanism object.
 
     virtual std::size_t object_sizeof() const = 0;
 
     // Event delivery, given event queue state:
 
+    virtual void nrn_state() {};
+    virtual void nrn_current() {};
     virtual void deliver_events(deliverable_event_stream::state) {};
+    virtual void write_ions() {};
 };
 
 } // namespace multicore
