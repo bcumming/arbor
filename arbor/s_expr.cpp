@@ -132,6 +132,7 @@ private:
                 case '\t'   :
                 case '\v'   :
                 case '\f'   :
+                case '\r'   :
                     ++stream_;
                     continue;   // skip to next character
 
@@ -141,15 +142,6 @@ private:
                     ++stream_;
                     line_start_ = stream_;
                     continue;
-
-                // carriage return (windows new line)
-                case '\r'   :
-                    ++stream_;
-                    if(*stream_ != '\n') {
-                        token_ = {loc(), tok::error, "expected new line after cariage return (bad line ending)"};
-                        return;
-                    }
-                    continue; // catch the new line on the next pass
 
                 // end of file
                 case 0      :
