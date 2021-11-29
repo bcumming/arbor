@@ -223,7 +223,7 @@ if(${CMAKE_POSITION_INDEPENDENT_CODE})
     PREFIX "${PROJECT_SOURCE_DIR}/mechanisms"
     CXX_FLAGS_TARGET ${ARB_CXX_FLAGS_TARGET_FULL}
     STANDALONE ON
-    VERBOSE ON)
+    VERBOSE OFF)
   target_compile_definitions(unit PRIVATE USE_DYNAMIC_CATALOGUES)
   if(ARB_WITH_NVCC)
     target_compile_options(dummy-catalogue PRIVATE -DARB_CUDA)

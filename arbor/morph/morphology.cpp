@@ -171,8 +171,8 @@ msize_t morphology::num_branches() const {
     return impl_->branches_.size();
 }
 
-morphology morphology::apply_isometry(const isometry& iso) const {
-    morphology_impl impl = *impl_;
+morphology apply_isometry(const morphology& morph, const isometry& iso) {
+    morphology_impl impl = *(morph.impl_);
     for (auto& branch: impl.branches_) {
         for (auto& seg: branch) {
             seg.prox = iso.apply(seg.prox);

@@ -327,6 +327,13 @@ void register_morphology(py::module& m) {
                     return util::pprintf("<arbor.morphology:\n{}>", m);
                 });
 
+    m.def("apply_isometry",
+        [](const arb::morphology& m, const arb::isometry& iso) {
+            return arb::apply_isometry(m, iso);
+        },
+        "morphology"_a, "isometry"_a,
+        "Return the result of applying an isometry to the morphology.");
+
     // Neurolucida ASCII, or .asc, file format support.
 
     py::class_<arborio::asc_morphology> asc_morphology(m, "asc_morphology",

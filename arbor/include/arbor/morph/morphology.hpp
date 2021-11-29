@@ -40,11 +40,13 @@ public:
     // Range of segments in a branch.
     const std::vector<msegment>& branch_segments(msize_t b) const;
 
-    // Return the result of applying an isometry to the morphology.
-    morphology apply_isometry(const isometry& iso) const;
+    friend morphology apply_isometry(const morphology& m, const isometry& iso);
 
     friend std::ostream& operator<<(std::ostream&, const morphology&);
 };
+
+// Return the result of applying an isometry to the morphology.
+morphology apply_isometry(const morphology& m, const isometry& iso);
 
 // Represent a (possibly empty or disconnected) region on a morphology.
 //
