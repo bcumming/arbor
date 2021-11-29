@@ -17,7 +17,7 @@ class morphology {
     std::shared_ptr<const morphology_impl> impl_;
 
 public:
-    morphology(segment_tree m);
+    morphology(const segment_tree& m);
     morphology();
 
     // Empty/default-constructed morphology?
@@ -39,6 +39,9 @@ public:
 
     // Range of segments in a branch.
     const std::vector<msegment>& branch_segments(msize_t b) const;
+
+    // Return the result of applying an isometry to the morphology.
+    morphology apply_isometry(const isometry& iso) const;
 
     friend std::ostream& operator<<(std::ostream&, const morphology&);
 };

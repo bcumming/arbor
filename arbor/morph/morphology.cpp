@@ -83,8 +83,6 @@ struct morphology_impl {
 
     morphology_impl(const segment_tree& m);
 
-    void init();
-
     friend std::ostream& operator<<(std::ostream&, const morphology_impl&);
 };
 
@@ -139,8 +137,8 @@ std::ostream& operator<<(std::ostream& o, const morphology_impl& m) {
 // morphology implementation
 //
 
-morphology::morphology(segment_tree m):
-    impl_(std::make_shared<const morphology_impl>(std::move(m)))
+morphology::morphology(const segment_tree& m):
+    impl_(std::make_shared<const morphology_impl>(m))
 {}
 
 morphology::morphology():
@@ -171,6 +169,19 @@ const std::vector<msegment>& morphology::branch_segments(msize_t b) const {
 
 msize_t morphology::num_branches() const {
     return impl_->branches_.size();
+}
+
+morphology morphology::apply_isometry(const isometry& iso) const {
+    morphology_impl impl = *impl_;
+    for (auto& branch: impl.branches_) {
+        for (auto& seg: branch) {
+            seg.prox = iso.apply(seg.prox);
+            seg.dist = iso.apply(seg.dist);
+        }
+    }
+    morphology m;
+    m.impl_ = std::make_shared<const morphology_impl>(std::move(impl));
+    return m;
 }
 
 std::ostream& operator<<(std::ostream& o, const morphology& m) {
