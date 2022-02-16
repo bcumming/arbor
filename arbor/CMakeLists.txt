@@ -86,6 +86,11 @@ if(ARB_WITH_MPI)
         communication/mpi_context.cpp)
 endif()
 
+## add tracy
+if(ARB_WITH_TRACY)
+    list(APPEND arbor_sources ../ext/tracy/TracyClient.cpp)
+endif()
+
 # Add special target for private include directory, for use by arbor target
 # and arbor unit tests. Private headers are also used for the other binaries
 # until the process of splitting our private and public headers is complete.

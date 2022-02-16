@@ -69,6 +69,8 @@ option(ARB_WITH_PROFILING "use built-in profiling" OFF)
 
 option(ARB_WITH_ASSERTIONS "enable arb_assert() assertions in code" OFF)
 
+option(ARB_WITH_TRACY "add support for the tracy profiling tool" OFF)
+
 #----------------------------------------------------------
 # NeuroML support library:
 #----------------------------------------------------------
@@ -280,6 +282,9 @@ if(ARB_WITH_PROFILING)
 endif()
 if(ARB_WITH_ASSERTIONS)
     target_compile_definitions(arbor-config-defs INTERFACE ARB_HAVE_ASSERTIONS)
+endif()
+if(ARB_WITH_TRACY)
+    target_compile_definitions(arbor-config-defs INTERFACE TRACY_ENABLE)
 endif()
 
 # Python bindings
