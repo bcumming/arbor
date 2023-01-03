@@ -15,24 +15,6 @@ namespace arb {
 namespace gpu {
 
 namespace impl {
-// Number of matrices per block in block-interleaved storage
-HOST_DEVICE_IF_GPU
-constexpr inline unsigned matrices_per_block() {
-    return 32u;
-}
-
-// The number of threads per matrix in the interleave and reverse-interleave
-// operations.
-HOST_DEVICE_IF_GPU
-constexpr inline unsigned load_width() {
-    return 32u;
-}
-
-// The alignment of matrices inside the block-interleaved storage.
-HOST_DEVICE_IF_GPU
-constexpr inline unsigned matrix_padding() {
-    return load_width();
-}
 
 // Placeholders to use for mark padded locations in data structures that use
 // padding. Using such markers makes it easier to test that padding is

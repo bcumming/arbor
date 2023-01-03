@@ -72,6 +72,7 @@ void solve_matrix_fine(
 {
     const auto tid = threadIdx.x;
     const auto bid = blockIdx.x;
+    const auto bdim = blockDim.x;
 
     const auto first_level = block_index[bid];
     const auto num_levels  = block_index[bid + 1] - first_level;
@@ -95,9 +96,10 @@ void solve_matrix_fine(
 
         // Perform backward substitution for each branch on this level.
         // One thread per branch.
-        if (tid < width) {
-            const unsigned len = lvl_lengths[tid];
-            unsigned pos = lvl_meta.matrix_data_index + tid;
+        auto j = tid;
+        while (j < width) {
+            const unsigned len = lvl_lengths[j];
+            unsigned pos = lvl_meta.matrix_data_index + j;
 
             // Zero diagonal term implies dt==0; just leave rhs (for whole matrix)
             // alone in that case.
@@ -122,12 +124,13 @@ void solve_matrix_fine(
                 // A parent may have more than one contributing to it, so we use
                 // atomic updates to avoid races conditions.
                 const unsigned parent_index = next_lvl_meta.matrix_data_index;
-                const unsigned p = parent_index + lvl_parents[tid];
+                const unsigned p = parent_index + lvl_parents[j];
 
                 const T factor = -u[pos] / d[pos];
                 gpu_atomic_add(d + p, factor*u[pos]);
                 gpu_atomic_add(rhs + p, factor*rhs[pos]);
             }
+            j += bdim;
         }
         __syncthreads();
     }
@@ -140,9 +143,10 @@ void solve_matrix_fine(
 
         const unsigned width = num_matrix[bid];
 
-        if (tid < width) {
-            const unsigned len = lvl_lengths[tid];
-            unsigned pos = last_lvl_meta.matrix_data_index + tid;
+        auto j = tid;
+        while (j < width) {
+            const unsigned len = lvl_lengths[j];
+            unsigned pos = last_lvl_meta.matrix_data_index + j;
 
             if (d[pos]!=0) {
                 // backward
@@ -168,6 +172,7 @@ void solve_matrix_fine(
                     pos -= width;
                 }
             }
+            j += bdim;
         }
     }
 
@@ -189,14 +194,15 @@ void solve_matrix_fine(
 
         // Perform forward-substitution for each branch on this level.
         // One thread per branch.
-        if (tid < width) {
+        auto j = tid;
+        while (j < width) {
             // Find the index of the first node in this branch.
-            const unsigned len = lvl_lengths[tid];
-            unsigned pos = lvl_meta.matrix_data_index + (len-1)*width + tid;
+            const unsigned len = lvl_lengths[j];
+            unsigned pos = lvl_meta.matrix_data_index + (len-1)*width + j;
 
             if (d[pos]!=0) {
                 // Load the rhs value for the parent node of this branch.
-                const unsigned p = parent_index + lvl_parents[tid];
+                const unsigned p = parent_index + lvl_parents[j];
                 T rhsp = rhs[p];
                 // each branch perform substitution
                 for (unsigned i=0; i<len; ++i) {
@@ -206,6 +212,7 @@ void solve_matrix_fine(
                     pos -= width;
                 }
             }
+            j += bdim;
         }
     }
 }

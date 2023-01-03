@@ -43,47 +43,6 @@ void solve_matrix_flat(
     }
 }
 
-/// GPU implementation of Hines Matrix solver.
-/// Block-interleaved format
-template <typename T, typename I, int BlockWidth>
-__global__
-void solve_matrix_interleaved(
-    T* rhs, T* d, const T* u, const I* p, const I* sizes, int padded_size, int num_mtx)
-{
-    auto tid = threadIdx.x + blockDim.x*blockIdx.x;
-
-    if (tid<num_mtx) {
-        const auto block       = tid/BlockWidth;
-        const auto block_start = block*BlockWidth;
-        const auto block_lane  = tid - block_start;
-
-        // get range of this thread's cell matrix
-        const auto first    = block_start*padded_size + block_lane;
-        const auto last     = first + BlockWidth*(sizes[tid]-1);
-        const auto last_max = first + BlockWidth*(sizes[block_start]-1);
-
-        // Zero diagonal term implies dt==0; just leave rhs (for whole matrix)
-        // alone in that case.
-        if (d[last]==0) return;
-
-        // backward sweep
-        for(auto i=last_max; i>first; i-=BlockWidth) {
-            if (i<=last) {
-                auto factor = u[i] / d[i];
-                d[p[i]]   -= factor * u[i];
-                rhs[p[i]] -= factor * rhs[i];
-            }
-        }
-        rhs[first] /= d[first];
-
-        // forward sweep
-        for(auto i=first+BlockWidth; i<=last; i+=BlockWidth) {
-            rhs[i] -= u[i] * rhs[p[i]];
-            rhs[i] /= d[i];
-        }
-    }
-}
-
 } // namespace kernels
 
 ARB_ARBOR_API void solve_matrix_flat(
@@ -100,22 +59,6 @@ ARB_ARBOR_API void solve_matrix_flat(
         <arb_value_type, arb_index_type>
         <<<grid_dim, block_dim>>>
         (rhs, d, u, p, cell_cv_divs, num_mtx);
-}
-
-void solve_matrix_interleaved(
-    arb_value_type* rhs,
-    arb_value_type* d,
-    const arb_value_type* u,
-    const arb_index_type* p,
-    const arb_index_type* sizes,
-    int padded_size,
-    int num_mtx)
-{
-    constexpr unsigned block_dim = impl::matrices_per_block();
-    const unsigned grid_dim = impl::block_count(num_mtx, block_dim);
-    kernels::solve_matrix_interleaved<arb_value_type, arb_index_type, block_dim>
-        <<<grid_dim, block_dim>>>
-        (rhs, d, u, p, sizes, padded_size, num_mtx);
 }
 
 } // namespace gpu

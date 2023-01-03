@@ -50,6 +50,7 @@ public:
     array solution_;
 
     // Maximum number of branches in each level per block
+    // Corresponds to the block dimension of the gpu kernels.
     unsigned max_branches_per_level;
 
     // Number of rows in matrix
@@ -94,12 +95,12 @@ public:
                  const std::vector<value_type>& cap,
                  const std::vector<value_type>& face_conductance,
                  const std::vector<value_type>& area,
-                 const std::vector<size_type>& cell_intdom)
+                 const std::vector<size_type>& cell_intdom,
+                 unsigned block_width=128):
+        max_branches_per_level(block_width)
     {
         using util::make_span;
         constexpr unsigned npos = unsigned(-1);
-
-        max_branches_per_level = 128;
 
         num_cells = cell_cv_divs.size()-1;
 
@@ -112,7 +113,7 @@ public:
         // one block is full, we start a new gpu block.
 
         unsigned current_block = 0;
-        std::vector<unsigned> block_num_branches_per_depth;
+        std::vector<unsigned> block_num_branches_per_level;
         std::vector<unsigned> block_ix(num_cells);
 
         // Accumulate num cells in block in a temporary vector to be copied to the device
@@ -142,24 +143,24 @@ public:
             auto num_cell_branches = cell_tree.num_segments();
 
             // count number of branches per level
-            std::vector<unsigned> cell_num_branches_per_depth(cell_num_levels, 0u);
+            std::vector<unsigned> cell_num_branches_per_level(cell_num_levels, 0u);
             for (auto i: make_span(num_cell_branches)) {
-                cell_num_branches_per_depth[depths[i]] += 1;
+                cell_num_branches_per_level[depths[i]] += 1;
             }
             // resize the block levels if neccessary
-            if (cell_num_levels > block_num_branches_per_depth.size()) {
-                block_num_branches_per_depth.resize(cell_num_levels, 0);
+            if (cell_num_levels > block_num_branches_per_level.size()) {
+                block_num_branches_per_level.resize(cell_num_levels, 0);
             }
 
-
-            // check if we can fit the current cell into the last gpu block
+            // check if the current cell fits the current gpu block
             bool fits_current_block = true;
             for (auto i: make_span(cell_num_levels)) {
-                unsigned new_branches_per_depth =
-                    block_num_branches_per_depth[i]
-                    + cell_num_branches_per_depth[i];
-                if (new_branches_per_depth > max_branches_per_level) {
+                unsigned new_branches_per_level =
+                    block_num_branches_per_level[i]
+                    + cell_num_branches_per_level[i];
+                if (new_branches_per_level > max_branches_per_level) {
                     fits_current_block = false;
+                    break;
                 }
             }
             if (fits_current_block) {
@@ -168,17 +169,18 @@ public:
                 temp_ncells_in_block[block_ix[c]] += 1;
                 // and increment counter
                 for (auto i: make_span(cell_num_levels)) {
-                    block_num_branches_per_depth[i] += cell_num_branches_per_depth[i];
+                    block_num_branches_per_level[i] += cell_num_branches_per_level[i];
                 }
             } else {
                 // otherwise start a new block
-                block_ix[c] = current_block + 1;
+                current_block++;
+                block_ix[c] = current_block;
                 temp_ncells_in_block.push_back(1);
                 branch_maps.resize(branch_maps.size()+1);
-                current_block += 1;
                 // and reset counter
-                block_num_branches_per_depth = cell_num_branches_per_depth;
-                for (auto num: block_num_branches_per_depth) {
+                block_num_branches_per_level = cell_num_branches_per_level;
+                /*
+                for (auto num: block_num_branches_per_level) {
                     if (num > max_branches_per_level) {
                         throw std::runtime_error(
                             "Could not fit " + std::to_string(num)
@@ -186,6 +188,7 @@ public:
                             + std::to_string(max_branches_per_level));
                     }
                 }
+                */
             }
             num_cells_in_block = memory::make_const_view(temp_ncells_in_block);
 
@@ -195,7 +198,7 @@ public:
             auto& branch_map = branch_maps[block_ix[c]];
 
             // build branch_map:
-            // branch_map[i] is a list of branch meta-data for branches with depth i
+            // branch_map[i] is a list of branch meta-data for branches at level i
             if (cell_num_levels > branch_map.size()) {
                 branch_map.resize(cell_num_levels);
             }

@@ -1,5 +1,9 @@
 # Flat and Interleaved Matrix Storage
 
+> **Note!**
+> This documentation is deprecated.
+> The production matrix solver is the *fine* solver, and the interleaved solver has been removed from the code base.
+
 This document describes the layout of different storage schemes for matrices use in the GPU back end.
 
 An NxN Hines matrix can be stored compactly with 3 vectors of length N:

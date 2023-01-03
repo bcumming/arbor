@@ -36,7 +36,7 @@ using testing::seq_almost_eq;
 using std::begin;
 using std::end;
 
-// test that the flat and interleaved storage back ends produce identical results
+// test that the flat and fine storage back ends produce identical results
 TEST(matrix, backends)
 {
     using T = arb_value_type;
@@ -119,7 +119,7 @@ TEST(matrix, backends)
 
     // Make the reference matrix and the gpu matrix
     auto flat = state_flat(p, cell_cv_divs, Cm, g, area, cell_to_intdom); // flat
-    auto fine = state_fine(p, cell_cv_divs, Cm, g, area, cell_to_intdom); // interleaved
+    auto fine = state_fine(p, cell_cv_divs, Cm, g, area, cell_to_intdom); // fine
 
     // Set the integration times for the cells to be between 0.01 and 0.02 ms.
     std::vector<T> dt(num_mtx, 0);
@@ -147,7 +147,7 @@ TEST(matrix, backends)
     // perform the same operations in the same order on the same inputs.
     auto x_flat = on_host(x_flat_d);
     // as the fine algorithm contains atomics the solution might be slightly
-    // different from flat and interleaved
+    // different from flat and fine
     auto x_fine = on_host(x_fine_d);
 
     auto max_diff_fine =
