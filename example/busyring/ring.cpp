@@ -259,8 +259,8 @@ int main(int argc, char** argv) {
 
         // Write spikes to file
         if (root) {
-            std::cout << "\n" << ns << " spikes generated at rate of "
-                      << params.duration/ns << " ms between spikes\n";
+            std::cout << "\n" << ns << " spikes generated at frequency of "
+                      << 1000. * ns / (params.duration * params.num_cells) << " Hz per cell\n";
             if (!recorded_spikes.empty()) {
                 std::ofstream fid(params.odir + "/" + params.name + "_spikes.gdf");
                 if (!fid.good()) {

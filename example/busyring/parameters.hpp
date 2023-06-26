@@ -26,7 +26,7 @@ struct cell_parameters {
     std::array<double,2> lengths = {200, 20};       //  Length of branch in μm.
 
     // The number of synapses per cell.
-    unsigned synapses = 1;
+    unsigned synapses = 100;
 };
 
 struct ring_params {
