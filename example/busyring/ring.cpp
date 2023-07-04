@@ -135,50 +135,6 @@ private:
     arb::cable_cell_global_properties gprop;
 };
 
-struct cell_stats {
-    using size_type = unsigned;
-    size_type ncells = 0;
-    size_type nbranch = 0;
-    size_type ncomp = 0;
-
-    cell_stats(arb::recipe& r) {
-#ifdef ARB_MPI_ENABLED
-        int nranks, rank;
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        MPI_Comm_size(MPI_COMM_WORLD, &nranks);
-        ncells = r.num_cells();
-        size_type cells_per_rank = ncells/nranks;
-        size_type b = rank*cells_per_rank;
-        size_type e = (rank==nranks-1)? ncells: (rank+1)*cells_per_rank;
-        size_type nbranch_tmp = 0;
-        for (size_type i=b; i<e; ++i) {
-            auto c = arb::util::any_cast<arb::cable_cell>(r.get_cell_description(i));
-            nbranch_tmp += c.morphology().num_branches();
-            for (unsigned i = 0; i < c.morphology().num_branches(); ++i) {
-                ncomp += c.morphology().branch_segments(i).size();
-            }
-        }
-        MPI_Allreduce(&nbranch_tmp, &nbranch, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
-#else
-        ncells = r.num_cells();
-        for (size_type i=0; i<ncells; ++i) {
-            auto c = arb::util::any_cast<arb::cable_cell>(r.get_cell_description(i));
-            nbranch += c.morphology().num_branches();
-            for (unsigned i = 0; i < c.morphology().num_branches(); ++i) {
-                ncomp += c.morphology().branch_segments(i).size();
-            }
-        }
-#endif
-    }
-
-    friend std::ostream& operator<<(std::ostream& o, const cell_stats& s) {
-        return o << "cell stats: "
-                 << s.ncells << " cells; "
-                 << s.nbranch << " branches; "
-                 << s.ncomp << " compartments; ";
-    }
-};
-
 int main(int argc, char** argv) {
     try {
         bool root = true;
@@ -216,8 +172,6 @@ int main(int argc, char** argv) {
 
         // Create an instance of our recipe.
         ring_recipe recipe(params);
-        cell_stats stats(recipe);
-        if (root) std::cout << stats << "\n";
         // Make decomposition
         auto decomp = arb::partition_load_balance(recipe, context, {{arb::cell_kind::cable, params.hint}});
         // Construct the model.
