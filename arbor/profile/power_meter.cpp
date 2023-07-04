@@ -10,10 +10,26 @@ namespace profile {
 
 class power_meter: public meter {
     std::vector<hw::energy_size_type> readings_;
+    //std::string name_;
+    std::string fname_;
 
 public:
+    power_meter(std::string name) {
+        fname_=name;
+        /*
+        fname_ = name;
+        if (name == std::string("energy")) {
+            name_ = name;
+        }
+        else if (auto it = name.find("_energy"); it != std::string::npos) {
+            name_ = name;
+            name_.erase(name_.begin()+it, name_.end());
+        }
+        */
+    }
+
     std::string name() override {
-        return "energy";
+        return fname_;
     }
 
     std::string units() override {
@@ -31,15 +47,15 @@ public:
     }
 
     void take_reading() override {
-        readings_.push_back(hw::energy());
+        readings_.push_back(hw::energy(fname_.c_str()));
     }
 };
 
-meter_ptr make_power_meter() {
+meter_ptr make_power_meter(std::string fname) {
     if (!arb::hw::has_energy_measurement()) {
         return nullptr;
     }
-    return meter_ptr(new power_meter());
+    return meter_ptr(new power_meter(fname));
 }
 
 } // namespace profile

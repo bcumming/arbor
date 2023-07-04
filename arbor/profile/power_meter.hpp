@@ -5,7 +5,7 @@
 namespace arb {
 namespace profile {
 
-meter_ptr make_power_meter();
+meter_ptr make_power_meter(std::string fname);
 
 } // namespace profile
 } // namespace arb

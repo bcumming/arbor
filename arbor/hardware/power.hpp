@@ -12,7 +12,7 @@ bool has_energy_measurement();
 using energy_size_type = std::uint64_t;
 
 // Returns energy_size_type(-1) if unable to read energy
-energy_size_type energy();
+energy_size_type energy(const char*);
 
 } // namespace hw
 } // namespace arb

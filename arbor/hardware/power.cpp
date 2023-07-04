@@ -13,10 +13,11 @@ bool has_energy_measurement() {
     return static_cast<bool>(std::ifstream(CRAY_PM_COUNTER_ENERGY));
 }
 
-energy_size_type energy() {
+energy_size_type energy(const char* counter_path) {
     energy_size_type result = energy_size_type(-1);
 
-    std::ifstream fid(CRAY_PM_COUNTER_ENERGY);
+    std::string full_path = std::string("/sys/cray/pm_counters/") + counter_path;
+    std::ifstream fid(full_path.c_str());
     if (fid) {
         fid >> result;
     }

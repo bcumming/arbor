@@ -1,4 +1,5 @@
 #include <arbor/profile/timer.hpp>
+#include <iostream>
 
 #include <arbor/profile/meter_manager.hpp>
 #include <arbor/context.hpp>
@@ -49,8 +50,10 @@ meter_manager::meter_manager() {
     if (auto m = make_gpu_memory_meter()) {
         meters_.push_back(std::move(m));
     }
-    if (auto m = make_power_meter()) {
-        meters_.push_back(std::move(m));
+    for (const char* f: {"accel0_energy", "accel1_energy", "accel2_energy", "accel3_energy", "cpu_energy", "energy", "memory_energy"}) {
+        if (auto m = make_power_meter(f)) {
+            meters_.push_back(std::move(m));
+        }
     }
 };
 
@@ -166,7 +169,7 @@ ARB_ARBOR_API std::ostream& operator<<(std::ostream& o, const meter_report& repo
                 sums[m_index] += time;
                 o << strprintf("%16.3f", time);
             }
-            else if (m.name.find("memory")!=std::string::npos) {
+            else if (m.name == "memory") {
                 // Calculate the average memory per rank in MB.
                 double mem = mean(m.measurements[cp_index])*1e-6;
                 sums[m_index] += mem;
@@ -174,11 +177,13 @@ ARB_ARBOR_API std::ostream& operator<<(std::ostream& o, const meter_report& repo
             }
             else if (m.name.find("energy")!=std::string::npos) {
                 auto doms_per_host = double(report.num_domains)/report.num_hosts;
+                //std::cout << "\n====" << doms_per_host << ", " << report.num_domains << ", " << report.num_hosts << "\n";
                 // Calculate the total energy consumed accross all ranks in kJ 
                 // Energy measurements are per "per node", so only normalise
                 // by the number of ranks per node. TODO, this is an
                 // approximation: better reduce a subset of measurements.
                 double energy = util::sum(m.measurements[cp_index])/doms_per_host*1e-3;
+                //double energy = m.measurements[cp_index][0]*1e-3;
                 sums[m_index] += energy;
                 o << strprintf("%16.3f", energy);
             }
