@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <array>
 
+#include <unistd.h>
+
 #include <nlohmann/json.hpp>
+#include <fmt/core.h>
 
 #include <arbor/assert_macro.hpp>
 #include <arbor/common_types.hpp>
@@ -24,6 +27,7 @@
 #include <arborio/label_parse.hpp>
 
 #include "parameters.hpp"
+#include "pm_counters.h"
 
 #ifdef ARB_MPI_ENABLED
 #include <mpi.h>
@@ -50,7 +54,8 @@ arb::cable_cell complex_cell(arb::cell_gid_type gid, const cell_parameters& para
 class ring_recipe: public arb::recipe {
 public:
     ring_recipe(ring_params params):
-        num_cells_(params.num_cells),
+        num_cells_cpu_(params.num_cells_cpu),
+        num_cells_gpu_(params.num_cells_gpu),
         min_delay_(params.min_delay),
         event_weight_(params.event_weight),
         params_(params)
@@ -66,8 +71,15 @@ public:
         }
     }
 
+    auto num_cells_gpu() const {
+        return num_cells_gpu_;
+    }
+    auto num_cells_cpu() const {
+        return num_cells_cpu_;
+    }
+
     std::any get_global_properties(cell_kind kind) const override { return gprop; }
-    cell_size_type num_cells() const override { return num_cells_; }
+    cell_size_type num_cells() const override { return num_cells_cpu_ + num_cells_gpu_; }
     cell_kind get_cell_kind(cell_gid_type gid) const override { return cell_kind::cable; }
     arb::util::unique_any get_cell_description(cell_gid_type gid) const override {
         if (params_.cell.complex_cell) {
@@ -86,12 +98,12 @@ public:
         const auto s = params_.ring_size;
         const auto group = gid/s;
         const auto group_start = s*group;
-        const auto group_end = std::min(group_start+s, num_cells_);
+        const auto group_end = std::min(group_start+s, num_cells());
         cell_gid_type src = gid==group_start? group_end-1: gid-1;
         cons.push_back(arb::cell_connection({src, "d"}, {"p"}, event_weight_, min_delay_*U::ms));
 
         // Used to pick source cell for a connection.
-        std::uniform_int_distribution<cell_gid_type> dist(0, num_cells_-2);
+        std::uniform_int_distribution<cell_gid_type> dist(0, num_cells()-2);
         // Used to pick delay for a connection.
         std::uniform_real_distribution<float> delay_dist(0, 2*min_delay_);
         auto src_gen = std::mt19937(gid);
@@ -123,8 +135,31 @@ public:
         return {{cable_probe_membrane_voltage{loc}, "Um"}};
     }
 
+    std::vector<arb::group_description> cell_groups() const {
+        std::vector<arb::group_description> groups;
+        groups.reserve(num_cells_cpu_ + 1);
+
+        // put the first num_cells_gpu_ cells in a single group on the GPU
+        if (num_cells_gpu_>0u) {
+            std::vector<arb::cell_gid_type> gpu_gids;
+            gpu_gids.reserve(num_cells_gpu_);
+            for (arb::cell_gid_type i=0; i<num_cells_gpu_; ++i) {
+                gpu_gids.push_back(i);
+            }
+            groups.push_back({arb::cell_kind::cable, gpu_gids, arb::backend_kind::gpu});
+        }
+
+        // put the next num_cells_cpu_ cells in single cell groups on the CPU
+        for (arb::cell_gid_type i=num_cells_gpu_; i<num_cells(); ++i) {
+            groups.push_back({arb::cell_kind::cable, {i}, arb::backend_kind::multicore});
+        }
+
+        return groups;
+    }
+
 private:
-    cell_size_type num_cells_;
+    cell_size_type num_cells_cpu_;
+    cell_size_type num_cells_gpu_;
     double min_delay_;
     float event_weight_;
     ring_params params_;
@@ -132,6 +167,7 @@ private:
     arb::cable_cell_global_properties gprop;
 };
 
+/*
 struct cell_stats {
     using size_type = unsigned;
     size_type ncells = 0;
@@ -175,6 +211,7 @@ struct cell_stats {
                  << s.ncomp << " compartments; ";
     }
 };
+*/
 
 int main(int argc, char** argv) {
     try {
@@ -188,11 +225,15 @@ int main(int argc, char** argv) {
 
 #ifdef ARB_MPI_ENABLED
         arbenv::with_mpi guard(argc, argv, false);
-        resources.gpu_id = arbenv::find_private_gpu(MPI_COMM_WORLD);
+        if(params.num_cells_gpu>0u) {
+            resources.gpu_id = arbenv::find_private_gpu(MPI_COMM_WORLD);
+        }
         auto context = arb::make_context(resources, MPI_COMM_WORLD);
         root = arb::rank(context) == 0;
 #else
-        resources.gpu_id = arbenv::default_gpu();
+        if(params.num_cells_gpu>0u) {
+            resources.gpu_id = arbenv::default_gpu();
+        }
         auto context = arb::make_context(resources);
 #endif
 
@@ -205,7 +246,8 @@ int main(int argc, char** argv) {
             std::cout << "gpu:      " << (has_gpu(context)? "yes": "no") << "\n";
             std::cout << "threads:  " << num_threads(context) << "\n";
             std::cout << "mpi:      " << (has_mpi(context)? "yes": "no") << "\n";
-            std::cout << "ranks:    " << num_ranks(context) << "\n" << std::endl;
+            std::cout << "ranks:    " << num_ranks(context) << "\n";
+            std::cout << "cells:    " << params.num_cells_cpu << " + " << params.num_cells_gpu << " = " << params.num_cells_cpu + params.num_cells_gpu << std::endl;
         }
 
         arb::profile::meter_manager meters;
@@ -213,10 +255,11 @@ int main(int argc, char** argv) {
 
         // Create an instance of our recipe.
         ring_recipe recipe(params);
-        cell_stats stats(recipe);
-        if (root) std::cout << stats << "\n";
+        //cell_stats stats(recipe);
+        //if (root) std::cout << stats << "\n";
         // Make decomposition
-        auto decomp = arb::partition_load_balance(recipe, context, {{arb::cell_kind::cable, params.hint}});
+        //auto decomp = arb::partition_load_balance(recipe, context, {{arb::cell_kind::cable, params.hint}});
+        auto decomp = arb::domain_decomposition(recipe, context, recipe.cell_groups());
         // Construct the model.
         arb::simulation sim(recipe, context, decomp);
 
@@ -247,45 +290,25 @@ int main(int argc, char** argv) {
 
         // Run the simulation.
         if (root) sim.set_epoch_callback(arb::epoch_progress_bar());
-        if (root) std::cout << "running simulation\n" << std::endl;
+
+        auto pm = create_pm_instrument();
+        pm->start();
         sim.run(params.duration*U::ms, params.dt*U::ms);
+        pm->stop();
 
         meters.checkpoint("model-run", context);
-
-        auto ns = sim.num_spikes();
-
-        // Write spikes to file
-        if (root) {
-            std::cout << "\n" << ns << " spikes generated at rate of "
-                      << params.duration/ns << " ms between spikes\n";
-            if (!recorded_spikes.empty()) {
-                std::ofstream fid(params.odir + "/" + params.name + "_spikes.gdf");
-                if (!fid.good()) {
-                    std::cerr << "Warning: unable to open file spikes.gdf for spike output\n";
-                }
-                else {
-                    char linebuf[45];
-                    for (auto spike: recorded_spikes) {
-                        auto n = std::snprintf(
-                            linebuf, sizeof(linebuf), "%u %.4f\n",
-                            unsigned{spike.source.gid}, float(spike.time));
-                        fid.write(linebuf, n);
-                    }
-                }
-            }
-        }
-
-        // Write the samples to a json file samples were stored on this rank.
-        if (voltage.size()>0u) {
-            std::string fname = params.odir + "/" + params.name + "_voltages.json";
-            write_trace_json(fname, voltage.at(0));
-        }
 
         auto report = arb::profile::make_meter_report(meters, context);
         if (root) {
             std::cout << report << '\n'
                       << arb::profile::profiler_summary() << "\n";
         }
+
+        char host[512];
+        gethostname(host, 511);
+        std::string hostname = host;
+        pm->print_result(hostname + ":");
+
     }
     catch (std::exception& e) {
         std::cerr << "exception caught in ring miniapp: " << e.what() << "\n";
